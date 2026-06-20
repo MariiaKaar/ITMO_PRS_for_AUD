@@ -514,7 +514,7 @@ if('age' %in% names(merged_data)) {
 }
 ```
 
-ОПИСАНИЕ PRS
+
 
 ```{r,echo=FALSE}
 pgs_summary <- read.csv("pgs_summary.csv", head = T)
