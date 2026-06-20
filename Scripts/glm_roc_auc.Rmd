@@ -1,0 +1,495 @@
+
+```{r}
+alco_data <- read.csv("C:/Users/Ast/Desktop/АЛКОГОЛИКИ/data_prs/alcofinal_summary.csv")
+```
+
+```{r}
+merged_data <- read.delim("C:/Users/Ast/Desktop/АЛКОГОЛИКИ/data_prs/merged_pheno_prs.txt", header=T)
+```
+
+```{r}
+merged_data$audit_score <- rowSums(merged_data[, 2:11], na.rm = TRUE)
+merged_data$alc_binary <- ifelse(merged_data$audit_score >= 15, 1, 0)
+merged_data$gender_binary <- ifelse(merged_data$gender == "female", 0, 1)
+```
+
+```{r}
+merged_data$age <- as.integer(
+  floor(
+    as.numeric(
+      difftime(
+        as.Date(merged_data$alcoholConsumption_updateDate),
+        as.Date(merged_data$birthdate),
+        units = "days"
+      )
+    ) / 365.25
+  )
+)
+```
+
+
+```{r}
+library(pROC)
+library(dplyr)
+
+# Создаем пустую таблицу для итогов
+results_table <- data.frame(
+    Score = character(),
+    OR = numeric(),
+    OR_lower = numeric(),
+    OR_upper = numeric(),
+    p_value = numeric(),
+    AUC = numeric(),
+    AUC_lower = numeric(),
+    AUC_upper = numeric(),
+    N = numeric(),
+    stringsAsFactors = FALSE
+)
+
+
+pdf("PRS_ROC_curves.pdf", width = 7, height = 7)
+
+#  39 - 50 columns
+for (col_idx in 39:50) {
+    
+    score_name <- colnames(merged_data)[col_idx]
+    
+    # Check empty 
+    if(all(is.na(merged_data[[col_idx]])) || length(unique(merged_data[[col_idx]])) < 2) next
+    
+    #  Standartisation
+    merged_data[[paste0(score_name, "_z")]] <- scale(merged_data[[col_idx]])
+    
+    #  Log regression
+    formula_text <- paste("alc_binary ~", paste0(score_name, "_z"))
+    model <- glm(as.formula(formula_text), family = binomial(), data = merged_data)
+    
+    #  OR и 95% CI
+    coef_table <- coef(summary(model))
+    coef_val <- coef(model)[2]                  
+    OR <- exp(coef_val)
+    
+    # p-value
+    p_val <- coef_table[2, "Pr(>|z|)"]
+    
+    # 95% CI с защитой от ошибок
+    conf <- tryCatch({
+        exp(confint(model)[2, ])
+    }, error = function(e) c(NA, NA))
+    
+    # ROC AUC
+    model_data <- model$model
+    model_data$pred_prob <- predict(model, type = "response")
+    roc_obj <- roc(model_data$alc_binary ~ model_data$pred_prob)
+    auc_val <- auc(roc_obj)
+    auc_ci <- ci.auc(roc_obj)
+    
+    N <- nrow(model_data)
+    
+    
+    results_table <- rbind(results_table, data.frame(
+        Score = score_name,
+        OR = OR,
+        OR_lower = conf[1],
+        OR_upper = conf[2],
+        p_value = p_val,
+        AUC = as.numeric(auc_val),
+        AUC_lower = auc_ci[1],
+        AUC_upper = auc_ci[3],
+        N = N
+    ))
+  
+    #  ROC
+    plot(roc_obj,
+         col = "blue",
+         lwd = 2,
+         main = paste("ROC Curve for", score_name),
+         print.auc = TRUE)
+    abline(a = 0, b = 1, lty = 2, col = "red")
+}
+
+
+dev.off()
+
+
+write.csv(results_table, "PRS_summary_table.csv", row.names = FALSE)
+
+
+print(results_table)
+```
+
+With predictors - AGE GENDER
++ Benjamini-Hochberg correction
+```{r}
+library(pROC)
+library(dplyr)
+
+results_table <- data.frame(
+    Score = character(),
+    OR = numeric(),
+    OR_lower = numeric(),
+    OR_upper = numeric(),
+    p_value = numeric(),
+    AUC = numeric(),
+    AUC_lower = numeric(),
+    AUC_upper = numeric(),
+    N = numeric(),
+    stringsAsFactors = FALSE
+)
+
+pdf("PRS_ROC_curves_adjusted.pdf", width = 7, height = 7)
+
+for (col_idx in 39:50) {
+    
+    score_name <- colnames(merged_data)[col_idx]
+    
+    
+    if(all(is.na(merged_data[[col_idx]])) || length(unique(merged_data[[col_idx]])) < 2) next
+    
+   
+    merged_data[[paste0(score_name, "_z")]] <- scale(merged_data[[col_idx]])
+    
+    # model with covariates
+    formula_text <- paste("alc_binary ~", paste0(score_name, "_z"), "+ age + gender")
+    
+    model <- glm(as.formula(formula_text),
+                 family = binomial(),
+                 data = merged_data)
+    
+    coef_table <- coef(summary(model))
+    
+  
+    coef_idx <- grep(paste0(score_name, "_z"), rownames(coef_table))
+    
+    # OR
+    coef_val <- coef(model)[coef_idx]
+    OR <- exp(coef_val)
+    
+    # p-value
+    p_val <- coef_table[coef_idx, "Pr(>|z|)"]
+    
+    # CI
+    conf <- tryCatch({
+        exp(confint(model)[coef_idx, ])
+    }, error = function(e) c(NA, NA))
+    
+    # ROC 
+    model_data <- model$model
+    model_data$pred_prob <- predict(model, type = "response")
+    
+    roc_obj <- roc(model_data$alc_binary, model_data$pred_prob)
+    auc_val <- auc(roc_obj)
+    auc_ci <- ci.auc(roc_obj)
+    
+    N <- nrow(model_data)
+    
+
+    results_table <- rbind(results_table, data.frame(
+        Score = score_name,
+        OR = OR,
+        OR_lower = conf[1],
+        OR_upper = conf[2],
+        p_value = p_val,
+        AUC = as.numeric(auc_val),
+        AUC_lower = auc_ci[1],
+        AUC_upper = auc_ci[3],
+        N = N
+    ))
+    
+    # ROC график
+    plot(roc_obj,
+         col = "blue",
+         lwd = 2,
+         main = paste("ROC Curve (adjusted) for", score_name),
+         print.auc = TRUE)
+    abline(a = 0, b = 1, lty = 2, col = "red")
+}
+
+dev.off()
+
+# FDR (Benjamini-Hochberg correction)
+results_table$p_adj_BH <- p.adjust(results_table$p_value, method = "BH")
+
+print(results_table)
+```
+a single graph for six curves 
+  "PGS000204",
+  "PGS002752",
+  "PGS003376"
+with and without covariates
+```{r}
+library(pROC)
+model_labels <- c(
+  "PGS000204",
+  "PGS002752",
+  "PGS003376"
+)
+
+scores <- c("PGS000204_hmPOS_GRCh37_SUM",
+            "PGS002752_hmPOS_GRCh37_SUM",
+            "PGS003376_hmPOS_GRCh37_SUM")
+
+roc_list <- list()
+auc_values <- c()
+labels <- c()
+
+colors <- c("black", "gold", "green", "red", "orange", "blue")
+
+i <- 1
+
+for (score_name in scores) {
+  
+  merged_data[[paste0(score_name, "_z")]] <- scale(merged_data[[score_name]])
+  
+  # PRS only
+  model1 <- glm(
+    as.formula(paste("alc_binary ~", paste0(score_name, "_z"))),
+    family = binomial(),
+    data = merged_data
+  )
+  
+  model_data1 <- model1$model
+  model_data1$pred <- predict(model1, type = "response")
+  
+  roc1 <- roc(model_data1$alc_binary, model_data1$pred)
+  
+  roc_list[[i]] <- roc1
+  auc_values[i] <- auc(roc1)
+  labels[i] <-  paste0(model_labels[which(scores == score_name)], "")
+  i <- i + 1
+  
+  # PRS + covariates
+  model2 <- glm(
+    as.formula(paste("alc_binary ~", paste0(score_name, "_z"), "+ age + gender")),
+    family = binomial(),
+    data = merged_data
+  )
+  
+  model_data2 <- model2$model
+  model_data2$pred <- predict(model2, type = "response")
+  
+  roc2 <- roc(model_data2$alc_binary, model_data2$pred)
+  
+  roc_list[[i]] <- roc2
+  auc_values[i] <- auc(roc2)
+  labels[i] <- paste0(model_labels[which(scores == score_name)], " + age+gender")
+  i <- i + 1
+}
+
+# Grafic
+pdf("ROC_summary_for_3_PRS.pdf", width = 7, height = 7)
+
+#par(bg = "#F5F5F5")
+
+plot(roc_list[[1]],
+     col = colors[1],
+     lwd = 2,
+     main = "ROC curves for PRS models",
+     legacy.axes = TRUE,
+       xlab = "True positive rate",
+      ylab = "False positive rate")
+
+for (j in 2:length(roc_list)) {
+  plot(roc_list[[j]],
+       col = colors[j],
+       lwd = 2,
+       add = TRUE)
+}
+
+abline(a = 0, b = 1, lty = 2, col = "gray")
+
+# --- AUC  ---
+x_pos <- 0.2
+y_pos <- seq(0.55, 0.35, length.out = length(auc_values))
+
+for (k in 1:length(auc_values)) {
+  text(x = x_pos,
+       y = y_pos[k],
+       labels = paste0("AUC: ", round(auc_values[k], 3)),
+       col = colors[k],
+       cex = 0.9,
+       adj = 0)
+}
+
+# --- Legend (Model) ---
+legend("bottomright",
+       legend = labels,
+       col = colors,
+       lwd = 3,
+       title = "Model",
+       cex = 0.7,
+       bty = "n")
+
+dev.off()
+```
+
+The graph is plotted separately for three models without predictors and for three with predictors
+```{r}
+library(pROC)
+
+model_labels <- c(
+    "PGS000204",
+    "PGS002752",
+    "PGS003376"
+)
+
+scores <- c("PGS000204_hmPOS_GRCh37_SUM",
+            "PGS002752_hmPOS_GRCh37_SUM",
+            "PGS003376_hmPOS_GRCh37_SUM")
+
+roc_prs <- list()
+roc_cov <- list()
+
+auc_prs <- c()
+auc_cov <- c()
+
+labels_prs <- c()
+labels_cov <- c()
+
+colors <- c("black", "red", "green")
+
+i <- 1
+
+for (score_name in scores) {
+    
+    merged_data[[paste0(score_name, "_z")]] <- scale(merged_data[[score_name]])
+    
+    ### PRS only
+    model1 <- glm(
+        as.formula(paste("alc_binary ~", paste0(score_name, "_z"))),
+        family = binomial(),
+        data = merged_data
+    )
+    
+    model_data1 <- model1$model
+    model_data1$pred <- predict(model1, type = "response")
+    
+    roc1 <- roc(model_data1$alc_binary, model_data1$pred)
+    
+    roc_prs[[i]] <- roc1
+    auc_prs[i] <- auc(roc1)
+    labels_prs[i] <- model_labels[which(scores == score_name)]
+    
+    
+    ### PRS + covariates
+    model2 <- glm(
+        as.formula(paste("alc_binary ~", paste0(score_name, "_z"), "+ age + gender")),
+        family = binomial(),
+        data = merged_data
+    )
+    
+    model_data2 <- model2$model
+    model_data2$pred <- predict(model2, type = "response")
+    
+    roc2 <- roc(model_data2$alc_binary, model_data2$pred)
+    
+    roc_cov[[i]] <- roc2
+    auc_cov[i] <- auc(roc2)
+    labels_cov[i] <- paste0(model_labels[which(scores == score_name)], " + age+gender")
+    
+    i <- i + 1
+}
+
+########################################
+# 🔹 1. PRS only
+########################################
+
+plot(roc_prs[[1]],
+     col = colors[1],
+     lwd = 2,
+     main = "ROC curves",
+     legacy.axes = TRUE,
+     cex.main = 2,
+     xlab = "False positive rate",
+     ylab = "True positive rate",
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+
+for (j in 2:length(roc_prs)) {
+    plot(roc_prs[[j]],
+         col = colors[j],
+         lwd = 2,
+         add = TRUE)
+}
+
+#abline(a = 0, b = 1, lty = 2, col = "gray")
+
+legend(x = 0.7, y = 0.4,
+       legend = labels_prs,
+       col = colors,
+       lwd = 6,
+       title = "Model",
+       cex = 1.2,
+       bty = "n")
+
+########################################
+# 🔹 2. PRS + covariates
+########################################
+
+plot(roc_cov[[1]],
+     col = colors[1],
+     lwd = 4,
+     main = "ROC curves",
+     legacy.axes = TRUE,
+     cex.main = 2,
+     xlab = "False positive rate",
+     ylab = "True positive rate",
+     cex.lab = 1.5,
+     cex.axis = 1.5)
+
+for (j in 2:length(roc_cov)) {
+    plot(roc_cov[[j]],
+         col = colors[j],
+         lwd = 2,
+         add = TRUE)
+}
+
+#abline(a = 0, b = 1, lty = 2, col = "gray")
+
+legend(x = 0.8, y = 0.33,
+       legend = labels_cov,
+       col = colors,
+       lwd = 6,
+       title = "Model",
+       cex = 1.0,
+       bty = "n")
+```
+
+COMPARISON OF THE THREE BEST MODELS WITH ONE ANOTHER BY USING THE DELONG TEST
+is used to compare two ROC curves, i.e., to check whether their AUCs differ statistically significantly.
+Δ=AUC1−AUC2
+SE(Δ)=Var(AUC1)+Var(AUC2)−2Cov(AUC1,AUC2)
+Z=Δ\SE(Δ)Δ
+
+
+The p-value is taken from a normal distribution
+```{r}
+library(pROC)
+
+# Vectors for results
+model_names <- labels
+auc_vals <- auc_values
+
+# We will calculate p-values only for pairs (PRS vs adjusted)
+p_values <- rep(NA, length(roc_list))
+
+for (i in seq(1, length(roc_list), by = 2)) {
+  
+  roc_prs <- roc_list[[i]]
+  roc_adj <- roc_list[[i + 1]]
+  
+  test <- roc.test(roc_prs, roc_adj, method = "delong")
+  
+  p_values[i] <- test$p.value
+  p_values[i + 1] <- test$p.value
+}
+
+results_table <- data.frame(
+  Model = model_names,
+  AUC = round(as.numeric(auc_vals), 3),
+  DeLong_p_value = signif(p_values, 3)
+)
+
+results_table
+```
+

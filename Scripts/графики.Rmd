@@ -1,0 +1,614 @@
+
+
+```{r}
+df <- read.delim("C:/Users/Ast/Desktop/АЛКОГОЛИКИ/data_prs/merged_pheno_prs.txt", header=T)
+```
+
+```{r}
+df$audit_score <- rowSums(df[, 2:11], na.rm = TRUE)
+df$alc_binary <- ifelse(df$audit_score >= 15, 1, 0)
+df$gender_binary <- ifelse(df$gender == "female", 0, 1)
+```
+Соотношение категорий AUDIT по перцентилям полигенных скоров
+```{r}
+library(dplyr)
+library(ggplot2)
+
+df <- df %>%
+  # 1. создаем зоны AUDIT
+  mutate(
+    audit_zone = case_when(
+      audit_score >= 0  & audit_score <= 7  ~ "1",
+      audit_score >= 8  & audit_score <= 15 ~ "2",
+      audit_score >= 16 & audit_score <= 19 ~ "3",
+      audit_score >= 20 & audit_score <= 40 ~ "4",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(audit_zone)) %>%
+  
+  # 2. создаем перцентили PRS (НЕ инвертируем)
+  mutate(
+    percentile = ntile(PGS002752_hmPOS_GRCh37_SUM, 100)
+  )
+
+# 3. считаем доли
+plot_df <- df %>%
+  group_by(percentile, audit_zone) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(percentile) %>%
+  mutate(prop = n / sum(n))
+
+# 4. порядок зон (для stacking)
+plot_df$audit_zone <- factor(plot_df$audit_zone, levels = c("4","3","2","1"))
+
+# 5. строим график
+ggplot(plot_df, aes(x = percentile, y = prop, fill = audit_zone)) +
+  geom_area(color = "white", linewidth = 0.2) +
+  scale_fill_manual(
+    values = c(
+      "1" = "#e41a1c",
+      "2" = "#377eb8",
+      "3" = "#4daf4a",
+      "4" = "#984ea3"
+    ),
+    name = "AUDIT zone"
+  ) +
+  labs(
+    title = "Ratio of Audit zones, PGS002752",
+    x = "PRS percentile",
+    y = "AUDIT zones ratio"
+  ) +
+  theme_minimal()
+```
+красивый вывод графика выше
+```{r}
+p <- ggplot(plot_df, aes(x = percentile, y = prop, fill = audit_zone)) +
+  geom_area(color = "white", linewidth = 0.2) +
+  scale_fill_manual(
+    values = c(
+      "1" = "#e41a1c",
+      "2" = "#377eb8",
+      "3" = "#4daf4a",
+      "4" = "#984ea3"
+    ),
+    name = "AUDIT zone"
+  ) +
+  labs(
+    title = "PGS002752",
+    x = "PRS percentile",
+    y = "AUDIT zones ratio"
+  ) +
+  theme_minimal() +
+
+  theme(
+    plot.title = element_text(size = 22, face = "bold"),
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 14),
+    legend.title = element_text(size = 20),
+    legend.text = element_text(size = 18)
+  )
+```
+
+отдельно для 003376( инвертированный график)
+Соотношение категорий AUDIT по перцентилям полигенных скоров
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# 1. Создаем зоны AUDIT и инвертированные перцентили PRS
+df <- df %>%
+  mutate(
+    audit_zone = case_when(
+      audit_score >= 0  & audit_score <= 7  ~ "1",
+      audit_score >= 8  & audit_score <= 15 ~ "2",
+      audit_score >= 16 & audit_score <= 19 ~ "3",
+      audit_score >= 20 & audit_score <= 40 ~ "4",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(audit_zone)) %>%
+  mutate(
+    percentile = 101 - ntile(PGS003376_hmPOS_GRCh37_SUM, 100)
+  )
+
+# 2. Считаем доли зон внутри каждого перцентиля
+plot_df <- df %>%
+  group_by(percentile, audit_zone) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(percentile) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup()
+
+# 3. Порядок слоев
+plot_df$audit_zone <- factor(
+  plot_df$audit_zone,
+  levels = c("4", "3", "2", "1")
+)
+
+# 4. Строим график
+ggplot(plot_df,
+       aes(x = percentile,
+           y = prop,
+           fill = audit_zone)) +
+  geom_area(color = "white", linewidth = 0.2) +
+  scale_fill_manual(
+    values = c(
+      "1" = "#e41a1c",
+      "2" = "#377eb8",
+      "3" = "#4daf4a",
+      "4" = "#984ea3"
+    ),
+    name = "AUDIT zone"
+  ) +
+  scale_x_continuous(
+    breaks = c(0, 25, 50, 75, 100),
+    limits = c(1, 100)
+  ) +
+  labs(
+    title = "PGS003376",
+    x = "PRS percentile",
+    y = "AUDIT zones ratio"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 22, face = "bold"),
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 14),
+    legend.title = element_text(size = 20),
+    legend.text = element_text(size = 18)
+  )
+```
+
+Распределение значений полигенных шкал риска, сгруппированных по децилям в каждой из категорий AUDIT
+```{r}
+library(dplyr)
+library(ggplot2)
+
+df <- df %>%
+  # 1. создаем зоны AUDIT
+  mutate(
+    audit_zone = case_when(
+      audit_score >= 0  & audit_score <= 7  ~ "1",
+      audit_score >= 8  & audit_score <= 15 ~ "2",
+      audit_score >= 16 & audit_score <= 19 ~ "3",
+      audit_score >= 20 & audit_score <= 40 ~ "4",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(audit_zone)) %>%
+  # 2. создаем децили PRS для PGS002752
+  mutate(prs_decile = ntile(PGS002752_hmPOS_GRCh37_SUM, 10))
+
+# 3. считаем долю образцов в каждой зоне для каждого дециля
+plot_df <- df %>%
+  group_by(audit_zone, prs_decile) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(audit_zone) %>%
+  mutate(prop = n / sum(n))
+
+# 4. задаем порядок зон
+plot_df$audit_zone <- factor(plot_df$audit_zone, levels = c("1","2","3","4"))
+
+# 5. строим график
+ggplot(plot_df, aes(x = factor(prs_decile), y = prop, fill = factor(prs_decile))) +
+    geom_col(color = "white", linewidth = 0.2, alpha = 1) +  # полностью непрозрачные
+    facet_wrap(~audit_zone, ncol = 4, labeller = labeller(
+        audit_zone = c("1"="Zone 1", "2"="Zone 2", "3"="Zone 3", "4"="Zone 4")
+    )) +
+    scale_fill_manual(
+        values = c(
+    "1" = "#fcc5c0",  # было #fde0dd
+            "2" = "#fb8da0",  # было #fa9fb5
+            "3" = "#b8e6b0",  # было #ccebc5
+            "4" = "#8cc2d9",  # было #a6bddb
+            "5" = "#fdd9a8",  # было #ffedcc
+            "6" = "#ffe64d",  # было #ffffb3
+            "7" = "#c7c7c7",  # было #d9d9d9
+            "8" = "#99b8d9",  # было #b3cde3
+            "9" = "#f99a92",  # было #fbb4ae
+            "10" = "#c9aed4"  # было #decbe4
+        ),
+        name = "PRS Decile"
+    ) +
+    scale_x_discrete(breaks = 1:10, labels = 1:10) +
+    labs(
+        title = "PGS002752",
+        x = "PRS Decile",
+        y = "Proportion of samples in zone"
+    ) +
+    theme_minimal() +
+    theme(
+        panel.spacing = unit(1, "lines"),
+        axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5),
+        strip.text = element_text(size = 15, face = "bold"),
+        axis.title = element_text(size = 18),      # подписи осей X и Y
+        axis.text = element_text(size = 12),       # цифры/деления на осях
+        plot.title = element_text(size = 18, face = "bold" ),      # заголовок графика
+        legend.text = element_text(size = 17),     # текст в легенде
+        legend.title = element_text(size = 14)  
+    )
+```
+
+инвертированный варинат графика для PGS003376
+```{r}
+library(dplyr)
+library(ggplot2)
+
+df <- df %>%
+    # 1. создаем зоны AUDIT
+    mutate(
+        audit_zone = case_when(
+            audit_score >= 0  & audit_score <= 7  ~ "1",
+            audit_score >= 8  & audit_score <= 15 ~ "2",
+            audit_score >= 16 & audit_score <= 19 ~ "3",
+            audit_score >= 20 & audit_score <= 40 ~ "4",
+            TRUE ~ NA_character_
+        )
+    ) %>%
+    filter(!is.na(audit_zone)) %>%
+    # 2. создаем децили PRS для 
+    mutate(prs_decile = ntile(PGS003376_hmPOS_GRCh37_SUM, 10),
+           prs_decile = 11 - prs_decile)
+
+# 3. считаем долю образцов в каждой зоне для каждого дециля
+plot_df <- df %>%
+    group_by(audit_zone, prs_decile) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    group_by(audit_zone) %>%
+    mutate(prop = n / sum(n))
+
+# 4. задаем порядок зон
+plot_df$audit_zone <- factor(plot_df$audit_zone, levels = c("1","2","3","4"))
+
+# 5. строим график
+ggplot(plot_df, aes(x = factor(prs_decile), y = prop, fill = factor(prs_decile))) +
+    geom_col(color = "white", linewidth = 0.2, alpha = 1) +  # полностью непрозрачные
+    facet_wrap(~audit_zone, ncol = 4, labeller = labeller(
+        audit_zone = c("1"="Zone 1", "2"="Zone 2", "3"="Zone 3", "4"="Zone 4")
+    )) +
+    scale_fill_manual(
+        values = c(
+            "1" = "#fcc5c0",  # было #fde0dd
+            "2" = "#fb8da0",  # было #fa9fb5
+            "3" = "#b8e6b0",  # было #ccebc5
+            "4" = "#8cc2d9",  # было #a6bddb
+            "5" = "#fdd9a8",  # было #ffedcc
+            "6" = "#ffe64d",  # было #ffffb3
+            "7" = "#c7c7c7",  # было #d9d9d9
+            "8" = "#99b8d9",  # было #b3cde3
+            "9" = "#f99a92",  # было #fbb4ae
+            "10" = "#c9aed4"  # было #decbe4
+        ),
+        name = "PRS Decile"
+    ) +
+    scale_x_discrete(breaks = 1:10, labels = 1:10) +
+    labs(
+        title = "PGS003376",
+        x = "PRS Decile",
+        y = "Proportion of samples in zone"
+    ) +
+    theme_minimal() +
+    theme(
+        panel.spacing = unit(1, "lines"),
+        axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5),
+        strip.text = element_text(size = 15, face = "bold"),
+        axis.title = element_text(size = 18),      # подписи осей X и Y
+        axis.text = element_text(size = 12),       # цифры/деления на осях
+        plot.title = element_text(size = 18, face = "bold" ),      # заголовок графика
+        legend.text = element_text(size = 17),     # текст в легенде
+        legend.title = element_text(size = 14)  
+    )
+```
+
+
+ГРАФИК - Odds ratio (OR) for polygenic risk score (PGS) deciles
+```{r}
+library(dplyr)
+library(ggplot2)
+library(broom)
+library(tidyr)
+
+# Список PRS
+prs_list <- c(
+  "PGS003376_hmPOS_GRCh37_SUM",
+  "PGS002752_hmPOS_GRCh37_SUM",
+  "PGS000204_hmPOS_GRCh37_SUM"
+)
+
+# 1. Создаем зоны AUDIT
+df <- df %>%
+  mutate(
+    audit_zone = case_when(
+      audit_score >= 0  & audit_score <= 7  ~ "1",
+      audit_score >= 8  & audit_score <= 15 ~ "2",
+      audit_score >= 16 & audit_score <= 19 ~ "3",
+      audit_score >= 20 & audit_score <= 40 ~ "4",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(audit_zone)) %>%
+  mutate(
+    zone_1_vs_234 = ifelse(audit_zone == "1", 0, 1),
+    zone_1_vs_4   = ifelse(audit_zone == "4", 1,
+                           ifelse(audit_zone == "1", 0, NA))
+  )
+
+# 2. Функция расчета OR (БЕЗ переворота)
+calc_or_prs <- function(df, prs_name, outcome){
+
+  df <- df %>%
+    mutate(
+      prs_decile = ntile(.data[[prs_name]], 10),
+      prs_decile = factor(prs_decile)
+    )
+
+  fit <- glm(
+    as.formula(paste(outcome, "~ prs_decile")),
+    family = binomial,
+    data = df
+  )
+
+  broom::tidy(fit, exponentiate = TRUE, conf.int = TRUE) %>%
+    filter(term != "(Intercept)") %>%
+    mutate(prs = prs_name)
+}
+
+# 3. Считаем OR
+or_list <- list()
+
+for(prs in prs_list){
+
+  or_list[[paste0(prs, "_234")]] <-
+    calc_or_prs(df, prs, "zone_1_vs_234") %>%
+    mutate(comparison = "zone 1 vs 2/3/4")
+
+  or_list[[paste0(prs, "_4")]] <-
+    calc_or_prs(df, prs, "zone_1_vs_4") %>%
+    mutate(comparison = "zone 1 vs 4")
+}
+
+# 4. Объединяем
+or_plot_df <- bind_rows(or_list)
+
+# 5. Делаем нормальные D2–D10 (правильный порядок!)
+or_plot_df <- or_plot_df %>%
+  mutate(
+    term = gsub("prs_decile", "", term),
+    term = gsub("[^0-9]", "", term),
+    term = paste0("D", term),
+    term = factor(term, levels = paste0("D", 2:10))
+  )
+
+# 6. График
+ggplot(or_plot_df,
+       aes(x = term, y = estimate, color = prs, group = prs)) +
+  geom_point(position = position_dodge(width = 0.3)) +
+  geom_errorbar(
+    aes(ymin = conf.low, ymax = conf.high),
+    width = 0.2,
+    position = position_dodge(width = 0.3)
+  ) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  facet_wrap(~comparison) +
+  labs(
+    x = "PRS Decile (ref = D1)",
+    y = "Odds Ratio (vs D1)",
+    color = "PGS"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+ГРАФИК - Odds ratio (OR) for polygenic risk score (PGS) deciles
+такой же график что и выше только у него все OR возрастают
+```{r}
+library(dplyr)
+library(ggplot2)
+library(broom)
+library(tidyr)
+
+# Список PRS
+prs_list <- c(
+    "PGS003376_hmPOS_GRCh37_SUM",
+    "PGS002752_hmPOS_GRCh37_SUM",
+    "PGS000204_hmPOS_GRCh37_SUM"
+)
+
+# 1. Создаем зоны AUDIT
+df <- df %>%
+    mutate(
+        audit_zone = case_when(
+            audit_score >= 0  & audit_score <= 7  ~ "1",
+            audit_score >= 8  & audit_score <= 15 ~ "2",
+            audit_score >= 16 & audit_score <= 19 ~ "3",
+            audit_score >= 20 & audit_score <= 40 ~ "4",
+            TRUE ~ NA_character_
+        )
+    ) %>%
+    filter(!is.na(audit_zone)) %>%
+    mutate(
+        zone_1_vs_234 = ifelse(audit_zone == "1", 0, 1),
+        zone_1_vs_4   = ifelse(audit_zone == "4", 1,
+                               ifelse(audit_zone == "1", 0, NA))
+    )
+
+# 2. Функция расчета OR (БЕЗ переворота)
+calc_or_prs <- function(df, prs_name, outcome){
+    
+    prs_decile <- ntile(df[[prs_name]], 10)
+    
+    # переворачиваем только этот PGS
+    if (prs_name == "PGS003376_hmPOS_GRCh37_SUM") {
+        prs_decile <- 11 - prs_decile
+    }
+    
+    df2 <- df %>%
+        mutate(
+            prs_decile = factor(prs_decile)
+        )
+    
+    fit <- glm(
+        as.formula(paste(outcome, "~ prs_decile")),
+        family = binomial,
+        data = df2
+    )
+    
+    broom::tidy(fit,
+                exponentiate = TRUE,
+                conf.int = TRUE) %>%
+        filter(term != "(Intercept)") %>%
+        mutate(prs = prs_name)
+}
+
+# 3. Считаем OR
+or_list <- list()
+
+for(prs in prs_list){
+    
+    or_list[[paste0(prs, "_234")]] <-
+        calc_or_prs(df, prs, "zone_1_vs_234") %>%
+        mutate(comparison = "zone 1 vs 2/3/4")
+    
+    or_list[[paste0(prs, "_4")]] <-
+        calc_or_prs(df, prs, "zone_1_vs_4") %>%
+        mutate(comparison = "zone 1 vs 4")
+}
+
+# 4. Объединяем
+or_plot_df <- bind_rows(or_list)
+
+# 5. Делаем нормальные D2–D10 (правильный порядок!)
+or_plot_df <- or_plot_df %>%
+    mutate(
+        term = gsub("prs_decile", "", term),
+        term = gsub("[^0-9]", "", term),
+        term = paste0("D", term),
+        term = factor(term, levels = paste0("D", 2:10))
+    )
+
+# 6. СОКРАЩАЕМ НАЗВАНИЯ PRS (оставляем только PGS+цифры)
+or_plot_df <- or_plot_df %>%
+    mutate(
+        prs = sub("_.*", "", prs)  # Удаляем всё после первого подчеркивания
+    )
+
+# 7. График с улучшенным оформлением
+ggplot(or_plot_df,
+       aes(x = term, y = estimate, color = prs, group = prs)) +
+    geom_point(
+        size = 3,
+        position = position_dodge(width = 0.3)
+    ) +
+    geom_errorbar(
+        aes(ymin = conf.low, ymax = conf.high),
+        width = 0.2,
+        linewidth = 0.8,
+        position = position_dodge(width = 0.3)
+    ) +
+    geom_hline(yintercept = 1, linetype = "dashed") +
+    facet_wrap(~comparison) +
+    labs(
+        title = "Odds Ratios for PGS deciles",
+        x = "PRS Decile (ref = D1)",
+        y = "Odds Ratio (vs D1)",
+        color = "PGS"
+    ) +
+    theme_minimal(base_size = 18) +
+    theme(
+        plot.title = element_text(
+            size = 24,
+            face = "bold",
+            hjust = 0.5
+        ),
+        axis.title.x = element_text(
+            size = 20,
+            face = "bold"
+        ),
+        axis.title.y = element_text(
+            size = 20,
+            face = "bold"
+        ),
+        axis.text.x = element_text(
+            size = 16,
+            angle = 45,
+            hjust = 1
+        ),
+        axis.text.y = element_text(
+            size = 16
+        ),
+        strip.text = element_text(
+            size = 18,
+            face = "bold"
+        ),
+        legend.title = element_text(
+            size = 18,
+            face = "bold"
+        ),
+        legend.text = element_text(
+            size = 16
+        ),
+        legend.position = "bottom",
+        legend.box = "horizontal",
+        legend.spacing.x = unit(0.5, "cm"),
+        legend.margin = margin(t = 10)
+    )
+
+```
+
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# 1. Создаем зоны AUDIT и группу по PRS (пример порога = медиана)
+df_plot <- df %>%
+    mutate(
+        audit_zone = case_when(
+            audit_score >= 0  & audit_score <= 7  ~ "1",
+            audit_score >= 8  & audit_score <= 15 ~ "2",
+            audit_score >= 16 & audit_score <= 19 ~ "3",
+            audit_score >= 20 & audit_score <= 40 ~ "4",
+            TRUE ~ NA_character_
+        ),
+        group_204 = ifelse(
+            PGS000204_hmPOS_GRCh37_SUM > median(PGS000204_hmPOS_GRCh37_SUM, na.rm = TRUE),
+            "Above threshold",
+            "Below threshold"
+        )
+    ) %>%
+    filter(!is.na(audit_zone))
+
+# 2. Считаем доли внутри каждой AUDIT зоны
+df_summary <- df_plot %>%
+    group_by(audit_zone, group_204) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    group_by(audit_zone) %>%
+    mutate(ratio = n / sum(n))
+
+# 3. (опционально) χ² тест
+tbl <- table(df_plot$audit_zone, df_plot$group_204)
+chi_p <- chisq.test(tbl)$p.value
+
+# 4. Строим график
+ggplot(df_summary, aes(x = audit_zone, y = ratio, fill = group_204)) +
+    geom_bar(stat = "identity", position = "stack", width = 0.8) +
+    scale_fill_manual(values = c("Above threshold" = "#FF3B3B",
+                                 "Below threshold" = "#78AFC6")) +
+    labs(
+        title = paste0("Groups ratio in AUDIT zones, PGS000204\n",
+                       "Chi-square p = ", signif(chi_p, 3)),
+        x = "AUDIT zone",
+        y = "Ratio of groups in AUDIT zones",
+        fill = ""
+    ) +
+    theme_minimal() +
+    theme(
+        plot.title = element_text(size = 18, face = "bold",hjust = 0.5),
+        panel.grid.major.x = element_blank(),
+        axis.title = element_text(size = 18), 
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 13)
+    )
+```
+

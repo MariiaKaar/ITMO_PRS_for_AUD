@@ -1,0 +1,556 @@
+```{r}
+library(readxl)
+scores <-  read.delim("aggregated_scores.txt")
+farm <-  read_excel("2026_02_04_для_Генотека.xlsx")
+
+
+```
+
+```{r}
+library(dplyr)
+farm <- farm %>% rename('IID' = 'ID')
+scores$IID <- sub("_.*", "", scores$IID)
+```
+
+```{r}
+merged <- merge(farm, scores, by = "IID")
+# convert the "treatment_program_completion_fact" column to binary format
+merged$outcome <- ifelse(merged$`факт_завершения программы лечения` == "да", 1, 0)
+merged <- merged %>% rename('drug' = 'группа (ПРЕПАРАТ, КОТОРЫЙ ПОЛУЧАЛ ПАЦИЕНТ)')  
+merged$drug <- as.factor(merged$drug)
+```
+
+Statistics - how many people took which drug and how many of them completed treatment
+```{r}
+library(dplyr)
+library(ggplot2)
+
+plot_df <- farm %>%
+    mutate(
+        treatment = recode(
+            `группа (ПРЕПАРАТ, КОТОРЫЙ ПОЛУЧАЛ ПАЦИЕНТ)`,
+            "Цианамид" = "Cyanamide",
+            "Прегабалин (Лирика)" = "Pregabalin(Lyrica)",
+            "Дисульфирам" = "Disulfiram",
+            "Плацебо" = "Plasebo"
+        ),
+        completed = recode(
+            `факт_завершения программы лечения`,
+            "да" = "Yes",
+            "нет" = "No"
+        )
+    ) %>%
+    count(treatment, completed)
+
+ggplot(
+    plot_df,
+    aes(
+        x = treatment,
+        y = n,
+        fill = completed
+    )
+) +
+    geom_col(color = "grey40", linewidth = 0.3) +
+    geom_text(
+        aes(label = n),
+        position = position_stack(vjust = 0.5),
+        size = 5,
+        fontface = "bold"
+    ) +
+    scale_fill_manual(
+        values = c(
+            "Yes" = "#BFD8B8",  
+            "No"  = "#F4C2C2"   
+        )
+    ) +
+    labs(
+        x = "Treatment",
+        y = "Number of Patients",
+        fill = "Completed Treatment"
+    ) +
+    theme_minimal(base_size = 16) +
+    theme(
+        axis.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 14),
+        legend.title = element_text(size = 16, face = "bold"),
+        legend.text = element_text(size = 14),
+        axis.text.x = element_text(size = 14),
+        panel.grid.major.x = element_blank()
+    )
+```
+
+
+
+Linear recursion for all PRS
+predict the outcome (outcomes 0 or 1) depending on the PRS score
+```{r}
+library(pROC)
+library(dplyr)
+
+# Пустая таблица
+results_table <- data.frame(
+    Score = character(),
+    OR = numeric(),
+    OR_lower = numeric(),
+    OR_upper = numeric(),
+    p_value = numeric(),
+    AUC = numeric(),
+    AUC_lower = numeric(),
+    AUC_upper = numeric(),
+    N = numeric(),
+    stringsAsFactors = FALSE
+)
+
+pgs_list <- unique(merged$PGS)
+
+for (pgs in pgs_list) {
+    
+    
+    df <- merged %>% filter(PGS == pgs)
+    
+  
+    if(all(is.na(df$SUM)) || length(unique(df$SUM)) < 2) next
+    
+    
+    df$PRS_z <- scale(df$SUM)
+    
+  
+    model <- glm(outcome ~ PRS_z, family = binomial(), data = df)
+    
+    # OR
+    coef_val <- coef(model)[2]
+    OR <- exp(coef_val)
+    
+    # p-value
+    coef_table <- coef(summary(model))
+    p_val <- coef_table[2, "Pr(>|z|)"]
+    
+    # CI
+    conf <- tryCatch({
+        exp(confint(model)[2, ])
+    }, error = function(e) c(NA, NA))
+    
+    # ROC
+    df$pred <- predict(model, type = "response")
+    roc_obj <- roc(df$outcome, df$pred)
+    
+    auc_val <- auc(roc_obj)
+    auc_ci <- ci.auc(roc_obj)
+    
+    N <- nrow(df)
+    
+ 
+    results_table <- rbind(results_table, data.frame(
+        Score = pgs,
+        OR = OR,
+        OR_lower = conf[1],
+        OR_upper = conf[2],
+        p_value = p_val,
+        AUC = as.numeric(auc_val),
+        AUC_lower = auc_ci[1],
+        AUC_upper = auc_ci[3],
+        N = N
+    ))
+}
+
+# Вывод
+print(results_table)
+```
+
+
+
+
++ covariate - column drug 
++ Benjamin Hochberg's correction for multiple comparisons
+ 
+```{r}
+library(pROC)
+library(dplyr)
+
+results_table <- data.frame(
+    Score = character(),
+    OR = numeric(),
+    OR_lower = numeric(),
+    OR_upper = numeric(),
+    p_value = numeric(),
+    AUC = numeric(),
+    AUC_lower = numeric(),
+    AUC_upper = numeric(),
+    N = numeric(),
+    stringsAsFactors = FALSE
+)
+
+pgs_list <- unique(merged$PGS)
+
+for (pgs in pgs_list) {
+    
+    df <- merged %>% filter(PGS == pgs)
+    
+    if(all(is.na(df$SUM)) || length(unique(df$SUM)) < 2) next
+    
+
+    df$PRS_z <- scale(df$SUM)
+    
+    #logistic regression with covariate drug
+    model <- glm(outcome ~ PRS_z + drug, family = binomial(), data = df)
+    
+    coef_val <- coef(model)["PRS_z"]
+    OR <- exp(coef_val)
+    
+    coef_table <- coef(summary(model))
+    p_val <- coef_table["PRS_z", "Pr(>|z|)"]
+    
+    conf <- tryCatch({
+        exp(confint(model)["PRS_z", ])
+    }, error = function(e) c(NA, NA))
+    
+    # ROC
+    df$pred <- predict(model, type = "response")
+    roc_obj <- roc(df$outcome, df$pred)
+    
+    auc_val <- auc(roc_obj)
+    auc_ci <- ci.auc(roc_obj)
+    
+    N <- nrow(df)
+    
+    results_table <- rbind(results_table, data.frame(
+        Score = pgs,
+        OR = OR,
+        OR_lower = conf[1],
+        OR_upper = conf[2],
+        p_value = p_val,
+        AUC = as.numeric(auc_val),
+        AUC_lower = auc_ci[1],
+        AUC_upper = auc_ci[3],
+        N = N
+    ))
+}
+
+# Benjamini-Hochberg amendment
+results_table$p_adjusted <- p.adjust(results_table$p_value, method = "BH")
+
+# sort by importance
+results_table <- results_table[order(results_table$p_adjusted), ]
+
+
+print(results_table)
+```
+```{r}
+library(dplyr)
+library(pROC)
+
+
+# summary table (PRS level)
+
+results_table <- data.frame(
+    Score = character(),
+    OR_PRS = numeric(),
+    CI_lower = numeric(),
+    CI_upper = numeric(),
+    p_PRS = numeric(),
+    p_interaction_global = numeric(),
+    p_interaction_min = numeric(),
+    AUC = numeric(),
+    AUC_lower = numeric(),
+    AUC_upper = numeric(),
+    N = numeric(),
+    stringsAsFactors = FALSE
+)
+
+# ---------------------------
+# table interaction for drugs 
+# ---------------------------
+interaction_table_all <- data.frame(
+    Score = character(),
+    term = character(),
+    p_value = numeric(),
+    stringsAsFactors = FALSE
+)
+
+pgs_list <- unique(merged$PGS)
+
+for (pgs in pgs_list) {
+    
+    df <- merged %>% filter(PGS == pgs)
+    
+   
+    if (all(is.na(df$SUM)) || length(unique(df$SUM)) < 2) next
+    
+    # standartisation PRS
+    df$PRS_z <- scale(df$SUM)
+    
+    # factor + reference = Placebo
+    df$drug <- as.factor(df$drug)
+    df$drug <- relevel(df$drug, ref = "Плацебо")
+    
+    # ---------------------------
+    # модель с interaction
+    # ---------------------------
+    model <- glm(outcome ~ PRS_z * drug,
+                 family = binomial(),
+                 data = df)
+    
+    coef_table <- summary(model)$coefficients
+    
+    # ---------------------------
+    # PRS effect (in placebo)
+    # ---------------------------
+    OR_PRS <- exp(coef_table["PRS_z", "Estimate"])
+    p_PRS <- coef_table["PRS_z", "Pr(>|z|)"]
+    
+    # CI для PRS
+    CI <- tryCatch({
+        exp(confint(model)["PRS_z", ])
+    }, error = function(e) c(NA, NA))
+    
+    # ---------------------------
+    # interaction effects (for each drug)
+    # ---------------------------
+    interaction_rows <- grep("PRS_z:drug", rownames(coef_table), value = TRUE)
+    
+    if (length(interaction_rows) > 0) {
+        
+        interaction_pvals <- coef_table[interaction_rows, "Pr(>|z|)"]
+        
+        interaction_tmp <- data.frame(
+            Score = pgs,
+            term = interaction_rows,
+            p_value = interaction_pvals
+        )
+        
+        interaction_table_all <- rbind(interaction_table_all, interaction_tmp)
+        
+        p_interaction_min <- min(interaction_pvals, na.rm = TRUE)
+        
+    } else {
+        p_interaction_min <- NA
+    }
+    
+    # global test interaction (LRT)
+    model_reduced <- glm(outcome ~ PRS_z + drug,
+                         family = binomial(),
+                         data = df)
+    
+    p_interaction_global <- anova(model_reduced, model, test = "LRT")[2, "Pr(>Chi)"]
+    
+
+    # ROC / AUC
+   
+    df$pred <- predict(model, type = "response")
+    roc_obj <- roc(df$outcome, df$pred)
+    
+    auc_val <- auc(roc_obj)
+    auc_ci <- ci.auc(roc_obj)
+    
+
+    results_table <- rbind(results_table, data.frame(
+        Score = pgs,
+        OR_PRS = OR_PRS,
+        CI_lower = CI[1],
+        CI_upper = CI[2],
+        p_PRS = p_PRS,
+        p_interaction_global = p_interaction_global,
+        p_interaction_min = p_interaction_min,
+        AUC = as.numeric(auc_val),
+        AUC_lower = auc_ci[1],
+        AUC_upper = auc_ci[3],
+        N = nrow(df)
+    ))
+}
+
+
+# correction BH
+
+results_table$p_PRS_adj <- p.adjust(results_table$p_PRS, method = "BH")
+results_table$p_interaction_adj <- p.adjust(results_table$p_interaction_global, method = "BH")
+
+interaction_table_all$p_adj <- p.adjust(interaction_table_all$p_value, method = "BH")
+
+
+results_table <- results_table %>%
+    arrange(p_interaction_adj, p_PRS_adj)
+
+interaction_table_all <- interaction_table_all %>%
+    arrange(p_value)
+
+
+print(results_table)
+print(interaction_table_all)
+```
+
+Forst Plot - I'm not sure it's needed, it's a bit pointless
+```{r}
+library(ggplot2)
+library(dplyr)
+
+
+plot_df <- results_table %>%
+    mutate(
+        OR_low = CI_lower,
+        OR_high = CI_upper
+    ) %>%
+    arrange(OR_PRS) %>%
+    mutate(Score = factor(Score, levels = Score))
+
+# forest plot
+ggplot(plot_df, aes(x = OR_PRS, y = Score)) +
+    geom_point() +
+    geom_errorbarh(aes(xmin = OR_low, xmax = OR_high), height = 0.2) +
+    geom_vline(xintercept = 1, linetype = "dashed") +
+    xlab("Odds Ratio (PRS)") +
+    ylab("Polygenic Score") +
+    theme_bw()
+```
+only for  prs PGS002752_hmPOS_GRCh37 PGS000204_hmPOS_GRCh37 PGS003376_hmPOS_GRCh37
+
+```{r}
+library(dplyr)
+library(pROC)
+
+
+pgs_list <- c(
+    "PGS002152_hmPOS_GRCh37",
+    "PGS002752_hmPOS_GRCh37",
+    "PGS000204_hmPOS_GRCh37",
+    "PGS003376_hmPOS_GRCh37"
+)
+
+drug_list <- unique(merged$drug)
+
+
+results_table <- data.frame(
+    Drug = character(),
+    Score = character(),
+    OR = numeric(),
+    CI_lower = numeric(),
+    CI_upper = numeric(),
+    p_value = numeric(),
+    AUC = numeric(),
+    AUC_lower = numeric(),
+    AUC_upper = numeric(),
+    N = numeric(),
+    stringsAsFactors = FALSE
+)
+
+cairo_pdf("ROC_by_drug.pdf", width = 7, height = 7)
+
+
+
+for (drug_name in drug_list) {
+    
+    drug_df <- merged %>%
+        filter(drug == drug_name)
+    
+    tmp_results <- data.frame()
+    
+    roc_list <- list()
+    auc_values <- c()
+    labels <- c()
+    colors <- c("red", "blue", "darkgreen", "black")
+    
+    i <- 1
+
+  
+
+    for (pgs in pgs_list) {
+        
+        df <- drug_df %>%
+            filter(PGS == pgs)
+        
+        if (nrow(df) < 10 || all(is.na(df$SUM)) || length(unique(df$outcome)) < 2) next
+        
+        df$PRS_z <- scale(df$SUM)
+        
+        model <- glm(outcome ~ PRS_z,
+                     family = binomial(),
+                     data = df)
+        
+        coef_table <- summary(model)$coefficients
+        
+        OR <- exp(coef_table["PRS_z", "Estimate"])
+        p_val <- coef_table["PRS_z", "Pr(>|z|)"]
+        
+        CI <- tryCatch({
+            exp(confint(model)["PRS_z", ])
+        }, error = function(e) c(NA, NA))
+        
+        df$pred <- predict(model, type = "response")
+        roc_obj <- roc(df$outcome, df$pred)
+        
+        roc_list[[i]] <- roc_obj
+        auc_values[i] <- auc(roc_obj)
+        labels[i] <- sub("_.*", "", pgs)
+        
+        auc_ci <- ci.auc(roc_obj)
+        
+        tmp_results <- rbind(tmp_results,
+                             data.frame(
+                                 Drug = drug_name,
+                                 Score = pgs,
+                                 OR = OR,
+                                 CI_lower = CI[1],
+                                 CI_upper = CI[2],
+                                 p_value = p_val,
+                                 AUC = as.numeric(auc(roc_obj)),
+                                 AUC_lower = auc_ci[1],
+                                 AUC_upper = auc_ci[3],
+                                 N = nrow(df)
+                             ))
+        
+        i <- i + 1
+    }
+    
+    # ---------------------------------
+    # BH correction inside drug
+    # ---------------------------------
+    if (nrow(tmp_results) > 0) {
+        tmp_results$p_adj_BH <- p.adjust(tmp_results$p_value, method = "BH")
+        results_table <- rbind(results_table, tmp_results)
+    }
+    
+    # ---------------------------------
+    # ROC PLOT 
+    # ---------------------------------
+    if (length(roc_list) > 0) {
+        
+        plot(smooth(roc_list[[1]]),
+             col = colors[1],
+             lwd = 4,
+             main = paste("ROC curves -", drug_name),
+             legacy.axes = TRUE,
+             xlab = "False positive rate",
+             ylab = "True positive rate",
+             cex.main = 1.8, 
+             cex.lab  = 1.6,   
+             cex.axis = 1.4 )
+        
+        if (length(roc_list) > 1) {
+            for (j in 2:length(roc_list)) {
+                plot(smooth(roc_list[[j]]),
+                     col = colors[j],
+                     lwd = 3,
+                     add = TRUE)
+            }
+        }
+        
+        #abline(a = 0, b = 1, lty = 2, col = "gray",lwd = 2)
+        
+        legend("bottomright",
+               legend = paste0(labels),
+               col = colors,
+               lwd = 4,
+               cex = 1.3,
+               bty = "n")
+    }
+}
+
+dev.off()
+
+
+results_table <- results_table %>%
+    arrange(Drug, p_adj_BH)
+
+print(results_table)
+```
+
+
