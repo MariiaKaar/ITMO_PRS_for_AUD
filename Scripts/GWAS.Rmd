@@ -1,0 +1,350 @@
+---
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r,warning=FALSE, echo=FALSE}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(bigsnpr)
+library(bigstatsr)
+```
+
+```{r,echo=FALSE}
+system("plink")
+```
+
+```{r}
+head(fam <- fread('data/penncath.fam'))
+```
+
+Family ID Individual ID Paternal ID Maternal ID Sex (1=male; 2=female;
+other=unknown) Phenotype
+
+```{r}
+head(clinical <- fread('data/penncath.csv'))
+```
+
+CAD=1 means that the subject has coronary artery disease), and some
+covariates (age, triglycerides, HDL and LDL cholesterol levels
+
+```{r}
+bim <- fread('data/penncath.bim')
+head(bim)
+```
+
+chromosome (1-22, X, Y or 0 if unplaced) rs# or snp identifier Genetic
+distance (morgans) Base-pair position (bp units) Allele 1 (usually minor
+allele, or ‘effect’ allele) Allele 2 (usually major allele) -9 - missed
+data
+
+```{r}
+snp_readBed("data/penncath.bed")
+penncath <- snp_attach("data/penncath.rds")
+
+# check out this bigSNP object 
+str(penncath)
+```
+
+create the .rds and .bk files
+
+**Basic quality control steps**
+
+1)Chromosome check
+
+```{r}
+penncath$map$chromosome |> table()
+```
+
+2)Missing data
+
+```{r}
+class(penncath$genotypes) 
+```
+
+```{r}
+?bigstatsr::big_counts # handy function to summarize data 
+```
+
+```{r}
+big_counts(penncath$genotypes, ind.row = 1:10, ind.col = 1:10) # в строках snp ( byrow = FALSE)
+```
+
+```{r}
+snp_stats <- big_counts(penncath$genotypes)
+```
+
+```{r}
+dim(snp_stats) 
+boxplot(snp_stats[4,]) # распределение количества пропущенных генотипов по SNP
+summary(snp_stats[4,]) 
+```
+
+exclude SNPs with \>10% missing data
+
+```{r}
+sample_stats <- big_counts(penncath$genotypes, byrow = TRUE) # byrow = TRUE-  она считает статистики по образцам (индивидам)
+# cell [1,1] is showing the # of people with "0" genotype at the 1st SNP
+sample_stats[, 1:10]
+
+boxplot(sample_stats[4,])
+summary(sample_stats[4,])
+```
+
+no outlier values
+
+3)  Heterozygosity check
+
+```{r}
+allele_dat <- sweep(x = sample_stats[1:3,], 
+                    # ^ leave off 4th row -- don't count NAs here
+                    MARGIN = 1,
+                    STATS = c(0, 1, 0),
+                    FUN = "*") |> colSums()
+
+boxplot(allele_dat/ncol(snp_stats))
+```
+
+```{r}
+hist(allele_dat/ncol(snp_stats),
+     main = "Zygosity",
+     xlab = "Proportion of samples which are heterozygous") # should be bell-curved shaped
+```
+
+4)  Minor allele frequency (MAF) filtering
+
+exclude SNPs that have low variation
+
+```{r}
+hist(snp_stats[1,]) #  в стобце 1 - гомозиготы
+summary(snp_stats[1,])
+```
+
+5)  Hardy-Weinberg equilibrium filtering
+
+------------------------------------------------------------------------
+
+```{r}
+system("plink --bfile data/penncath --make-bed --out data/penncath_clean")
+```
+
+```{r}
+path_to_qc_penncath_bed <- snp_plinkQC(
+  plink.path = "plink", # again, you may need to change this according to your machine!
+  prefix.in = "data/penncath_clean", # input data
+  prefix.out = "data/qc_penncath", # creates *new* rds with quality-controlled data
+  maf = 0.01, # filter out SNPs with MAF < 0.01
+  geno = 0.1, # filter out SNPs missing more than 10% of data
+  mind = 0.1, # filter out SNPs missing more than 10% of data,
+  hwe = 1e-10, # filter out SNPs that have p-vals below this threshold for HWE test
+  autosome.only = TRUE # we want chromosomes 1-22 only
+  
+)
+```
+
+```{r}
+snp_readBed("data/qc_penncath.bed")
+```
+
+**Imputation**
+
+```{r}
+obj <- snp_attach("data/qc_penncath.rds")
+# double check dimensions 
+dim(obj$fam)
+# [1] 1401    6
+dim(obj$map) 
+# [1] 696644      6
+dim(obj$genotypes)
+```
+
+```{r}
+snp_stats <- bigstatsr::big_counts(obj$genotypes)
+# ^ bigstatsr is loaded with bigsnpr, just being explicit here for didactic purposes
+colnames(snp_stats) <- obj$map$marker.ID
+snp_stats[,1:5] # shows # of 0, 1, 2, and NA values for 1st 5 SNPs
+
+(any_missing <- sum(snp_stats[4,] != 0)) # shows # of SNPs with NA values 
+# у 565138 все еще есть пропущенные значения (хотя и менее 10%)
+call_rates <- colSums(snp_stats[1:3,])/colSums(snp_stats) 
+head(call_rates)
+```
+
+```{r}
+# impute based on mode
+obj$geno_imputed <- snp_fastImputeSimple(Gna = obj$genotypes,
+                                          method = "mode",
+                                          ncores = nb_cores())
+
+# save imputed values 
+obj$geno_imputed$code256 <- bigsnpr::CODE_IMPUTE_PRED
+
+# look to see that imputation was successful:
+imp_snp_stats <- big_counts(X.code = obj$geno_imputed)
+imp_snp_stats[,1:5] # all 0s in NA row 
+```
+
+```{r}
+obj <- bigsnpr::snp_save(obj)
+```
+
+**Principal component analysis (PCA)**
+
+```{r}
+
+svd_X <- big_SVD(obj$geno_imputed, # must have imputed data
+                 big_scale(), # centers and scales data -- REALLY IMPORTANT! 
+                 k = 10 # use 10 PCs for now -- can ask for more if needed
+                 )
+
+saveRDS(svd_X, "data/svd_X.rds")
+```
+
+```{r}
+svd_X <- readRDS("data/svd_X.rds")
+
+str(svd_X)
+
+# scree plot
+plot(svd_X) 
+```
+
+```{r}
+plot(svd_X, type = "scores")
+```
+
+```{r}
+clinical <- fread('data/penncath.csv') |>
+  mutate(across(.cols = c(sex, CAD),
+                .fns = as.factor))
+dplyr::glimpse(clinical)
+
+
+plot(svd_X, type = "scores") +
+  aes(color = clinical$sex) +
+  labs(color = "Sex")
+```
+
+Family relatedness
+
+```{r}
+K <- big_tcrossprodSelf(X = obj$geno_imputed,
+                        fun.scaling = big_scale())
+
+save(K, file = "data/K.RData")
+```
+
+```{r}
+library(corrplot)
+corrplot::corrplot(K[1:50, 1:50]*(1/ncol(obj$geno_imputed)),
+                   is.corr = FALSE,
+                   tl.pos = "n")
+```
+
+**SNP testing (marginal approach)**
+
+```{r}
+obj$fam <- dplyr::full_join(x = obj$fam,
+                            y = clinical,
+                            by = c('family.ID' = 'FamID'))
+```
+
+```{r}
+# load principal components 
+svd_X <- readRDS(file = "data/svd_X.rds")
+
+# calculate the PCs                          
+pc <- sweep(svd_X$u, 2, svd_X$d, "*")
+dim(pc) # will have same number of rows as U
+# [1] 1401   10
+names(pc) <- paste0("PC", 1:ncol(pc))
+```
+
+Implement tests
+
+```{r}
+# Fit a logistic model between the phenotype and each SNP separately
+# while adding PCs as covariates to each model
+obj$fam$CAD <- as.numeric(as.character(obj$fam$CAD))
+obj.gwas <- big_univLogReg(X = obj$geno_imputed,
+                           y01.train = obj$fam$CAD,
+                           covar.train = pc[,1:5],
+                           ncores = nb_cores())
+
+# this takes a min or two, so I will save these results 
+saveRDS(object = obj.gwas, file = "data/gwas.rds")
+```
+
+```{r}
+obj.gwas <- readRDS("data/gwas.rds")
+```
+
+Visualizing
+
+QQ plot
+
+```{r}
+qq <- bigsnpr::snp_qq(obj.gwas)
+(qq)
+```
+
+```{r}
+viridis22 <- c(rep(c("#fde725", "#90d743", "#35b779", "#21918c", "#31688e", 
+                "#443983", "#440154"), 3), "#fde725")
+
+manh <- snp_manhattan(gwas = obj.gwas,
+              infos.chr = obj$map$chromosome,
+              infos.pos = obj$map$physical.pos,
+              colors = viridis22)
+
+(manh)
+```
+
+```{r}
+signif_threshold <- 5e-8 
+suggest_threshold <- 5e-6 
+
+(manh + 
+  geom_hline(yintercept = -log10(signif_threshold),
+             # note: plot y-axis is on -log10 scale 
+             color = "#35b779",
+             lty = 2) + 
+  geom_hline(yintercept = -log10(suggest_threshold),
+             color = "#443983",
+             lty = 2)
+)
+```
+```{r}
+# Подключаем нужные библиотеки
+library(ggplot2)
+library(data.table)
+
+# Загружаем данные
+gwas <- fread("alcohol_sub_gwas.ss.gz")
+
+# Преобразуем P-значения в -log10(P) для оси Y
+gwas$negLogP <- -log10(gwas$P)
+
+# Построим Manhattan plot с порогами значимости
+ggplot(gwas, aes(x = POS, y = negLogP, color = as.factor(CHROM))) +
+  geom_point(alpha = 0.6, size = 0.5) + 
+  scale_color_manual(values = rep(c("blue", "orange"), length.out = length(unique(gwas$CHROM)))) +  # Чередование цветов для хромосом
+  geom_hline(yintercept = -log10(5e-8), color = "red", linetype = "dashed") +  # Линия для порога значимости P-value ≤ 5e-8
+  geom_hline(yintercept = -log10(5e-5), color = "blue", linetype = "dashed") + # Линия для порога P-value ≤ 5e-5
+  facet_wrap(~ CHROM, scales = "free_x", ncol = 5) +  # Разбиваем по хромосомам
+  theme_minimal() + 
+  labs(
+    title = "Manhattan Plot for AUD",
+    x = "Chromosome Position",
+    y = "-log10(P-value)"
+  ) + 
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.text.x = element_text(size = 8)
+  )
+
+```
+
