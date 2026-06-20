@@ -9,13 +9,13 @@ df$audit_score <- rowSums(df[, 2:11], na.rm = TRUE)
 df$alc_binary <- ifelse(df$audit_score >= 15, 1, 0)
 df$gender_binary <- ifelse(df$gender == "female", 0, 1)
 ```
-Соотношение категорий AUDIT по перцентилям полигенных скоров
+Ratio of AUDIT categories by polygenic score percentiles
 ```{r}
 library(dplyr)
 library(ggplot2)
 
 df <- df %>%
-  # 1. создаем зоны AUDIT
+
   mutate(
     audit_zone = case_when(
       audit_score >= 0  & audit_score <= 7  ~ "1",
@@ -27,22 +27,22 @@ df <- df %>%
   ) %>%
   filter(!is.na(audit_zone)) %>%
   
-  # 2. создаем перцентили PRS (НЕ инвертируем)
+  
   mutate(
     percentile = ntile(PGS002752_hmPOS_GRCh37_SUM, 100)
   )
 
-# 3. считаем доли
+
 plot_df <- df %>%
   group_by(percentile, audit_zone) %>%
   summarise(n = n(), .groups = "drop") %>%
   group_by(percentile) %>%
   mutate(prop = n / sum(n))
 
-# 4. порядок зон (для stacking)
+
 plot_df$audit_zone <- factor(plot_df$audit_zone, levels = c("4","3","2","1"))
 
-# 5. строим график
+
 ggplot(plot_df, aes(x = percentile, y = prop, fill = audit_zone)) +
   geom_area(color = "white", linewidth = 0.2) +
   scale_fill_manual(
@@ -61,7 +61,7 @@ ggplot(plot_df, aes(x = percentile, y = prop, fill = audit_zone)) +
   ) +
   theme_minimal()
 ```
-красивый вывод графика выше
+
 ```{r}
 p <- ggplot(plot_df, aes(x = percentile, y = prop, fill = audit_zone)) +
   geom_area(color = "white", linewidth = 0.2) +
@@ -89,14 +89,13 @@ p <- ggplot(plot_df, aes(x = percentile, y = prop, fill = audit_zone)) +
     legend.text = element_text(size = 18)
   )
 ```
-
-отдельно для 003376( инвертированный график)
-Соотношение категорий AUDIT по перцентилям полигенных скоров
+Separately for 003376 (inverted graph)
+Ratio of AUDIT categories by polygenic score percentiles
 ```{r}
 library(dplyr)
 library(ggplot2)
 
-# 1. Создаем зоны AUDIT и инвертированные перцентили PRS
+
 df <- df %>%
   mutate(
     audit_zone = case_when(
@@ -112,7 +111,7 @@ df <- df %>%
     percentile = 101 - ntile(PGS003376_hmPOS_GRCh37_SUM, 100)
   )
 
-# 2. Считаем доли зон внутри каждого перцентиля
+
 plot_df <- df %>%
   group_by(percentile, audit_zone) %>%
   summarise(n = n(), .groups = "drop") %>%
@@ -120,13 +119,13 @@ plot_df <- df %>%
   mutate(prop = n / sum(n)) %>%
   ungroup()
 
-# 3. Порядок слоев
+
 plot_df$audit_zone <- factor(
   plot_df$audit_zone,
   levels = c("4", "3", "2", "1")
 )
 
-# 4. Строим график
+
 ggplot(plot_df,
        aes(x = percentile,
            y = prop,
@@ -160,13 +159,13 @@ ggplot(plot_df,
   )
 ```
 
-Распределение значений полигенных шкал риска, сгруппированных по децилям в каждой из категорий AUDIT
+
 ```{r}
 library(dplyr)
 library(ggplot2)
 
 df <- df %>%
-  # 1. создаем зоны AUDIT
+
   mutate(
     audit_zone = case_when(
       audit_score >= 0  & audit_score <= 7  ~ "1",
@@ -177,20 +176,20 @@ df <- df %>%
     )
   ) %>%
   filter(!is.na(audit_zone)) %>%
-  # 2. создаем децили PRS для PGS002752
+
   mutate(prs_decile = ntile(PGS002752_hmPOS_GRCh37_SUM, 10))
 
-# 3. считаем долю образцов в каждой зоне для каждого дециля
+
 plot_df <- df %>%
   group_by(audit_zone, prs_decile) %>%
   summarise(n = n(), .groups = "drop") %>%
   group_by(audit_zone) %>%
   mutate(prop = n / sum(n))
 
-# 4. задаем порядок зон
+
 plot_df$audit_zone <- factor(plot_df$audit_zone, levels = c("1","2","3","4"))
 
-# 5. строим график
+
 ggplot(plot_df, aes(x = factor(prs_decile), y = prop, fill = factor(prs_decile))) +
     geom_col(color = "white", linewidth = 0.2, alpha = 1) +  # полностью непрозрачные
     facet_wrap(~audit_zone, ncol = 4, labeller = labeller(
@@ -230,13 +229,13 @@ ggplot(plot_df, aes(x = factor(prs_decile), y = prop, fill = factor(prs_decile))
     )
 ```
 
-инвертированный варинат графика для PGS003376
+
 ```{r}
 library(dplyr)
 library(ggplot2)
 
 df <- df %>%
-    # 1. создаем зоны AUDIT
+
     mutate(
         audit_zone = case_when(
             audit_score >= 0  & audit_score <= 7  ~ "1",
@@ -247,21 +246,20 @@ df <- df %>%
         )
     ) %>%
     filter(!is.na(audit_zone)) %>%
-    # 2. создаем децили PRS для 
+
     mutate(prs_decile = ntile(PGS003376_hmPOS_GRCh37_SUM, 10),
            prs_decile = 11 - prs_decile)
 
-# 3. считаем долю образцов в каждой зоне для каждого дециля
 plot_df <- df %>%
     group_by(audit_zone, prs_decile) %>%
     summarise(n = n(), .groups = "drop") %>%
     group_by(audit_zone) %>%
     mutate(prop = n / sum(n))
 
-# 4. задаем порядок зон
+
 plot_df$audit_zone <- factor(plot_df$audit_zone, levels = c("1","2","3","4"))
 
-# 5. строим график
+
 ggplot(plot_df, aes(x = factor(prs_decile), y = prop, fill = factor(prs_decile))) +
     geom_col(color = "white", linewidth = 0.2, alpha = 1) +  # полностью непрозрачные
     facet_wrap(~audit_zone, ncol = 4, labeller = labeller(
@@ -293,16 +291,16 @@ ggplot(plot_df, aes(x = factor(prs_decile), y = prop, fill = factor(prs_decile))
         panel.spacing = unit(1, "lines"),
         axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5),
         strip.text = element_text(size = 15, face = "bold"),
-        axis.title = element_text(size = 18),      # подписи осей X и Y
-        axis.text = element_text(size = 12),       # цифры/деления на осях
-        plot.title = element_text(size = 18, face = "bold" ),      # заголовок графика
-        legend.text = element_text(size = 17),     # текст в легенде
+        axis.title = element_text(size = 18),      
+        axis.text = element_text(size = 12),     
+        plot.title = element_text(size = 18, face = "bold" ),    
+        legend.text = element_text(size = 17),     
         legend.title = element_text(size = 14)  
     )
 ```
 
 
-ГРАФИК - Odds ratio (OR) for polygenic risk score (PGS) deciles
+
 ```{r}
 library(dplyr)
 library(ggplot2)
@@ -316,7 +314,6 @@ prs_list <- c(
   "PGS000204_hmPOS_GRCh37_SUM"
 )
 
-# 1. Создаем зоны AUDIT
 df <- df %>%
   mutate(
     audit_zone = case_when(
@@ -334,7 +331,7 @@ df <- df %>%
                            ifelse(audit_zone == "1", 0, NA))
   )
 
-# 2. Функция расчета OR (БЕЗ переворота)
+
 calc_or_prs <- function(df, prs_name, outcome){
 
   df <- df %>%
@@ -354,7 +351,7 @@ calc_or_prs <- function(df, prs_name, outcome){
     mutate(prs = prs_name)
 }
 
-# 3. Считаем OR
+
 or_list <- list()
 
 for(prs in prs_list){
@@ -368,10 +365,10 @@ for(prs in prs_list){
     mutate(comparison = "zone 1 vs 4")
 }
 
-# 4. Объединяем
+
 or_plot_df <- bind_rows(or_list)
 
-# 5. Делаем нормальные D2–D10 (правильный порядок!)
+
 or_plot_df <- or_plot_df %>%
   mutate(
     term = gsub("prs_decile", "", term),
@@ -380,7 +377,7 @@ or_plot_df <- or_plot_df %>%
     term = factor(term, levels = paste0("D", 2:10))
   )
 
-# 6. График
+
 ggplot(or_plot_df,
        aes(x = term, y = estimate, color = prs, group = prs)) +
   geom_point(position = position_dodge(width = 0.3)) +
@@ -399,22 +396,21 @@ ggplot(or_plot_df,
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
-ГРАФИК - Odds ratio (OR) for polygenic risk score (PGS) deciles
-такой же график что и выше только у него все OR возрастают
+
 ```{r}
 library(dplyr)
 library(ggplot2)
 library(broom)
 library(tidyr)
 
-# Список PRS
+
 prs_list <- c(
     "PGS003376_hmPOS_GRCh37_SUM",
     "PGS002752_hmPOS_GRCh37_SUM",
     "PGS000204_hmPOS_GRCh37_SUM"
 )
 
-# 1. Создаем зоны AUDIT
+
 df <- df %>%
     mutate(
         audit_zone = case_when(
@@ -432,12 +428,12 @@ df <- df %>%
                                ifelse(audit_zone == "1", 0, NA))
     )
 
-# 2. Функция расчета OR (БЕЗ переворота)
+
 calc_or_prs <- function(df, prs_name, outcome){
     
     prs_decile <- ntile(df[[prs_name]], 10)
     
-    # переворачиваем только этот PGS
+ 
     if (prs_name == "PGS003376_hmPOS_GRCh37_SUM") {
         prs_decile <- 11 - prs_decile
     }
@@ -460,7 +456,7 @@ calc_or_prs <- function(df, prs_name, outcome){
         mutate(prs = prs_name)
 }
 
-# 3. Считаем OR
+
 or_list <- list()
 
 for(prs in prs_list){
@@ -474,10 +470,9 @@ for(prs in prs_list){
         mutate(comparison = "zone 1 vs 4")
 }
 
-# 4. Объединяем
 or_plot_df <- bind_rows(or_list)
 
-# 5. Делаем нормальные D2–D10 (правильный порядок!)
+
 or_plot_df <- or_plot_df %>%
     mutate(
         term = gsub("prs_decile", "", term),
@@ -486,13 +481,13 @@ or_plot_df <- or_plot_df %>%
         term = factor(term, levels = paste0("D", 2:10))
     )
 
-# 6. СОКРАЩАЕМ НАЗВАНИЯ PRS (оставляем только PGS+цифры)
+
 or_plot_df <- or_plot_df %>%
     mutate(
-        prs = sub("_.*", "", prs)  # Удаляем всё после первого подчеркивания
+        prs = sub("_.*", "", prs)  
     )
 
-# 7. График с улучшенным оформлением
+
 ggplot(or_plot_df,
        aes(x = term, y = estimate, color = prs, group = prs)) +
     geom_point(
