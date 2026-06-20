@@ -1,7 +1,7 @@
 
 
 ```{r}
-df <- read.delim("C:/Users/Ast/Desktop/АЛКОГОЛИКИ/data_prs/merged_pheno_prs.txt", header=T)
+df <- read.delim("merged_pheno_prs.txt", header=T)
 ```
 
 ```{r}
@@ -191,22 +191,22 @@ plot_df$audit_zone <- factor(plot_df$audit_zone, levels = c("1","2","3","4"))
 
 
 ggplot(plot_df, aes(x = factor(prs_decile), y = prop, fill = factor(prs_decile))) +
-    geom_col(color = "white", linewidth = 0.2, alpha = 1) +  # полностью непрозрачные
+    geom_col(color = "white", linewidth = 0.2, alpha = 1) +  
     facet_wrap(~audit_zone, ncol = 4, labeller = labeller(
         audit_zone = c("1"="Zone 1", "2"="Zone 2", "3"="Zone 3", "4"="Zone 4")
     )) +
     scale_fill_manual(
         values = c(
     "1" = "#fcc5c0",  # было #fde0dd
-            "2" = "#fb8da0",  # было #fa9fb5
-            "3" = "#b8e6b0",  # было #ccebc5
-            "4" = "#8cc2d9",  # было #a6bddb
-            "5" = "#fdd9a8",  # было #ffedcc
-            "6" = "#ffe64d",  # было #ffffb3
-            "7" = "#c7c7c7",  # было #d9d9d9
-            "8" = "#99b8d9",  # было #b3cde3
-            "9" = "#f99a92",  # было #fbb4ae
-            "10" = "#c9aed4"  # было #decbe4
+            "2" = "#fb8da0", 
+            "3" = "#b8e6b0",  
+            "4" = "#8cc2d9",  
+            "5" = "#fdd9a8",
+            "6" = "#ffe64d",  
+            "7" = "#c7c7c7", 
+            "8" = "#99b8d9", 
+            "9" = "#f99a92",  
+            "10" = "#c9aed4"  
         ),
         name = "PRS Decile"
     ) +
@@ -221,10 +221,10 @@ ggplot(plot_df, aes(x = factor(prs_decile), y = prop, fill = factor(prs_decile))
         panel.spacing = unit(1, "lines"),
         axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5),
         strip.text = element_text(size = 15, face = "bold"),
-        axis.title = element_text(size = 18),      # подписи осей X и Y
-        axis.text = element_text(size = 12),       # цифры/деления на осях
-        plot.title = element_text(size = 18, face = "bold" ),      # заголовок графика
-        legend.text = element_text(size = 17),     # текст в легенде
+        axis.title = element_text(size = 18),      
+        axis.text = element_text(size = 12),       
+        plot.title = element_text(size = 18, face = "bold" ),    
+        legend.text = element_text(size = 17),     
         legend.title = element_text(size = 14)  
     )
 ```
@@ -261,22 +261,22 @@ plot_df$audit_zone <- factor(plot_df$audit_zone, levels = c("1","2","3","4"))
 
 
 ggplot(plot_df, aes(x = factor(prs_decile), y = prop, fill = factor(prs_decile))) +
-    geom_col(color = "white", linewidth = 0.2, alpha = 1) +  # полностью непрозрачные
+    geom_col(color = "white", linewidth = 0.2, alpha = 1) +  
     facet_wrap(~audit_zone, ncol = 4, labeller = labeller(
         audit_zone = c("1"="Zone 1", "2"="Zone 2", "3"="Zone 3", "4"="Zone 4")
     )) +
     scale_fill_manual(
         values = c(
-            "1" = "#fcc5c0",  # было #fde0dd
-            "2" = "#fb8da0",  # было #fa9fb5
-            "3" = "#b8e6b0",  # было #ccebc5
-            "4" = "#8cc2d9",  # было #a6bddb
-            "5" = "#fdd9a8",  # было #ffedcc
-            "6" = "#ffe64d",  # было #ffffb3
-            "7" = "#c7c7c7",  # было #d9d9d9
-            "8" = "#99b8d9",  # было #b3cde3
-            "9" = "#f99a92",  # было #fbb4ae
-            "10" = "#c9aed4"  # было #decbe4
+            "1" = "#fcc5c0",  
+            "2" = "#fb8da0", 
+            "3" = "#b8e6b0", 
+            "4" = "#8cc2d9", 
+            "5" = "#fdd9a8",  
+            "6" = "#ffe64d",  
+            "7" = "#c7c7c7",  
+            "8" = "#99b8d9", 
+            "9" = "#f99a92",  
+            "10" = "#c9aed4"  
         ),
         name = "PRS Decile"
     ) +
@@ -307,7 +307,7 @@ library(ggplot2)
 library(broom)
 library(tidyr)
 
-# Список PRS
+
 prs_list <- c(
   "PGS003376_hmPOS_GRCh37_SUM",
   "PGS002752_hmPOS_GRCh37_SUM",
@@ -556,7 +556,7 @@ ggplot(or_plot_df,
 library(dplyr)
 library(ggplot2)
 
-# 1. Создаем зоны AUDIT и группу по PRS (пример порога = медиана)
+
 df_plot <- df %>%
     mutate(
         audit_zone = case_when(
@@ -574,18 +574,18 @@ df_plot <- df %>%
     ) %>%
     filter(!is.na(audit_zone))
 
-# 2. Считаем доли внутри каждой AUDIT зоны
+
 df_summary <- df_plot %>%
     group_by(audit_zone, group_204) %>%
     summarise(n = n(), .groups = "drop") %>%
     group_by(audit_zone) %>%
     mutate(ratio = n / sum(n))
 
-# 3. (опционально) χ² тест
+
 tbl <- table(df_plot$audit_zone, df_plot$group_204)
 chi_p <- chisq.test(tbl)$p.value
 
-# 4. Строим график
+
 ggplot(df_summary, aes(x = audit_zone, y = ratio, fill = group_204)) +
     geom_bar(stat = "identity", position = "stack", width = 0.8) +
     scale_fill_manual(values = c("Above threshold" = "#FF3B3B",
