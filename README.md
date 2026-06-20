@@ -26,15 +26,19 @@ Contact: mariakr55@mail.ru
 - [Nextflow](https://pgsc-calc.readthedocs.io/en/latest/getting-started.html)
 - [Docker](https://docs.docker.com/get-docker/)
 ### R
-#### Notebooks
 
-
+## Notebooks
+-  All the notebooks in the Scrips folder.
 
 |     |  Notebook               | Description                                         |
 | ----| ------------------------| --------------------------------------------------- |
 |1    | Sample_characteristics  | Performs descriptive analysis of the study cohort   |
-|2    | GWAS_AUD                | Performs a genome-wide association study to identify genetic variants associated with AUDIT scores while adjusting for demographic and population structure covariates.|          |3    | run_prs_pipeline.sh     | Performs genotype quality control by filtering variants and samples based on missingness, minor allele frequency (MAF), and Hardy–Weinberg equilibrium, then calculates a selected polygenic risk score (PGS) using the PGS Catalog Calculator pipeline.|                              
-  
+|2    | GWAS_AUD                | Performs a genome-wide association study to identify genetic variants associated with AUDIT scores while adjusting for demographic and population structure covariates.|          
+|3    | run_prs_pipeline.sh     | Performs genotype quality control by filtering variants and samples based on missingness, minor allele frequency (MAF), and Hardy–Weinberg equilibrium, then calculates a selected polygenic risk score (PGS) using the PGS Catalog Calculator pipeline.|    
+|4    | glm_roc_auc.Rmd          | Builds logistic regression models with and without demographic covariates (age and sex), computes odds ratios (OR) and ROC AUC metrics |
+|5    | PRS_visualization.Rmd    | Generates risk-stratification plots based on polygenic risk scores, including odds ratios across PRS deciles, distributions of AUDIT categories across PRS percentiles, and PRS distributions within AUDIT severity groups.|
+|6    | farmo_alco.Rmd           | Evaluates associations between polygenic risk scores (PRS) and treatment outcomes across medication groups using logistic regression, calculates odds ratios (OR), ROC AUC and confidence intervals, applies multiple-testing correction (Benjamini–Hochberg), identifies the best-performing PRS models, and generates comparative ROC curve visualizations for each treatment group.|
+ 
 
 
 
