@@ -1,0 +1,532 @@
+---
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+Чтение даты с фенотиом
+
+```{r}
+pheno_data <- read.table("alcohol_phenotypes_full.csv", header = TRUE, skip = 1, sep = ",")
+```
+
+создание столбца с возрастом
+
+```{r,echo=FALSE}
+# Преобразуем столбцы в правильные форматы
+pheno_data$birthdate <- as.Date(pheno_data$birthdate)
+
+# Для даты-времени указываем формат явно
+pheno_data$alcoholConsumption_updateDate <- as.POSIXct(
+  pheno_data$alcoholConsumption_updateDate, 
+  format = "%Y-%m-%d %H:%M:%S"
+)
+
+# Теперь вычисляем возраст в годах
+pheno_data$age <- as.numeric(
+  difftime(pheno_data$alcoholConsumption_updateDate, 
+           pheno_data$birthdate, 
+           units = "days") / 365.25
+)
+
+# Округляем до целого числа лет
+pheno_data$age <- floor(pheno_data$age)
+```
+
+чтение даты с прс
+
+```{r}
+prs_data <- read.table("merged_PRS_pheno.txt", header = TRUE)
+```
+
+мерджим прс и фенотип
+
+```{r}
+names(prs_data)[1] <- "IID"
+merged_data <- merge(pheno_data, prs_data, by = "IID")
+merged_data$gender_binary <- ifelse(pheno_data$gender == "male", 1, 0)
+```
+
+Первичный осмотр данных
+
+```{r,echo=FALSE}
+cat("Dataset shape (rows, columns):", dim(merged_data), "\n\n")
+
+cat("Column names:\n")
+print(colnames(merged_data))
+cat("\n")
+
+
+cat("Data types:\n")
+print(sapply(merged_data, class))
+cat("\n")
+
+cat("Missing values per column (where > 0):\n")
+missing_vals <- colSums(is.na(merged_data))
+print(missing_vals[missing_vals > 0])
+cat("\n")
+
+# Базовая статистика для AUDIT показателей
+audit_cols <- grep("AUDIT|audit", colnames(merged_data), value = TRUE, ignore.case = TRUE)
+
+if (length(audit_cols) > 0) {
+  for (col in audit_cols) {
+    if (col %in% colnames(merged_data)) {
+      cat("AUDIT score statistics for", col, ":\n")
+      print(summary(merged_data[[col]]))
+      cat("Mean:", mean(merged_data[[col]], na.rm = TRUE), "\n")
+      cat("SD:", sd(merged_data[[col]], na.rm = TRUE), "\n")
+      cat("Min:", min(merged_data[[col]], na.rm = TRUE), "\n")
+      cat("Max:", max(merged_data[[col]], na.rm = TRUE), "\n")
+      cat("\n")
+    }
+  }
+} else {
+  # Если нет AUDIT столбцов, проверяем общую статистику числовых столбцов
+  cat("No AUDIT columns found. Summary of numeric columns:\n")
+  numeric_summary <- summary(merged_data[sapply(merged_data, is.numeric)])
+  print(numeric_summary)
+}
+```
+
+Удалим пропущенные значения
+
+```{r}
+merged_data <- na.omit(merged_data)
+```
+
+Определение подшкал AUDIT_consumption : 1 2 3 вопросы AUDIT_dependence : 4 5 6 вопросы AUDIT_problems : 7 8 9 вопросы
+
+```{r}
+merged_data$AUDIT_consumption <- merged_data$alcoholConsumption + merged_data$alcoholVolume + merged_data$alcoholExtremeConsumptionFrequency
+merged_data$AUDIT_dependence <- merged_data$alcoholCantStop + merged_data$alcoholBrokenPromise + merged_data$alcoholHangoverDrinking
+merged_data$AUDIT_problems <- merged_data$alcoholGuiltyFeeling + merged_data$alcoholMemoryLoss + merged_data$alcoholInjuries + merged_data$alcoholReductionRecommendations
+```
+
+Подсчет статистики по подшкалам
+
+```{r,echo=FALSE}
+library(dplyr)
+summary_stats <- merged_data %>%
+  summarise(
+    consumption_mean = mean(AUDIT_consumption, na.rm = TRUE),
+    consumption_sd = sd(AUDIT_consumption, na.rm = TRUE),
+    dependence_mean = mean(AUDIT_dependence, na.rm = TRUE),
+    dependence_sd = sd(AUDIT_dependence, na.rm = TRUE),
+    problems_mean = mean(AUDIT_problems, na.rm = TRUE),
+    problems_sd = sd(AUDIT_problems, na.rm = TRUE)
+  )
+
+print(summary_stats)
+
+# Гистограммы распределения подшкал
+par(mfrow = c(1, 3))
+print(hist(merged_data$AUDIT_consumption, main = "AUDIT Consumption", xlab = "Score"))
+hist(merged_data$AUDIT_dependence, main = "AUDIT Dependence", xlab = "Score")
+hist(merged_data$AUDIT_problems, main = "AUDIT Problems", xlab = "Score")
+par(mfrow = c(1, 1))
+```
+
+Корреляция между подшкалами
+
+```{r,echo=FALSE}
+# 1. Создаём датафрейм с суммарными баллами по подшкалам AUDIT
+subscales_df <- data.frame(
+  AUDIT_consumption = merged_data$alcoholConsumption + merged_data$alcoholCantStop + merged_data$alcoholHangoverDrinking,
+  AUDIT_dependence = merged_data$alcoholBrokenPromise + merged_data$alcoholGuiltyFeeling + merged_data$alcoholMemoryLoss,
+  AUDIT_problems = merged_data$alcoholInjuries + merged_data$alcoholReductionRecommendations
+)
+
+# 2. Расчёт корреляционной матрицы (по умолчанию Пирсон)
+correlation_matrix <- cor(subscales_df, use = "complete.obs")
+print("\nКорреляционная матрица между подшкалами:")
+print(correlation_matrix)
+
+# 3. Визуализация корреляций
+# Устанавливаем библиотеки если нужно:
+# install.packages("ggplot2")
+# install.packages("reshape2")
+library(ggplot2)
+library(reshape2)
+
+# Преобразуем матрицу корреляций для ggplot2
+melted_corr <- melt(correlation_matrix)
+
+# Создаём тепловую карту
+ggplot(data = melted_corr, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab",
+                       name = "Корреляция\nПирсона") +
+  geom_text(aes(label = round(value, 2)), color = "black", size = 4) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()) +
+  coord_fixed() +
+  ggtitle("Матрица корреляций: подшкалы AUDIT")
+```
+
+Анализ распределения для формирования контрольной группы
+
+```{r,echo=FALSE}
+# Гистограмма распределения баллов AUDIT с потенциальными границами групп
+hist(merged_data$audit_score, breaks = 50, 
+     main = "Распределение баллов AUDIT",
+     xlab = "AUDIT Total Score", 
+     ylab = "Frequency",
+     col = "lightblue",
+     border = "black")
+
+# Определяем границы групп на основе квантилей
+median_score <- median(merged_data$audit_score, na.rm = TRUE)
+low_threshold <- quantile(merged_data$audit_score, probs = 0.33, na.rm = TRUE)
+high_threshold <- quantile(merged_data$audit_score, probs = 0.67, na.rm = TRUE)
+
+# Создаем группы на основе пороговых значений
+merged_data$AUDIT_group <- cut(merged_data$audit_score,
+                               breaks = c(-Inf, low_threshold, high_threshold, Inf),
+                               labels = c('Low (Control)', 'Intermediate', 'High (Cases)'))
+
+
+library(ggplot2)
+
+ggplot(merged_data, aes(x = audit_score, fill = AUDIT_group)) +
+  geom_histogram(bins = 30, alpha = 0.6, color = "black") +
+  labs(x = "AUDIT Total Score", 
+       y = "Frequency", 
+       title = "AUDIT Score Distribution by Group") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Low (Control)" = "blue", 
+                               "Intermediate" = "green", 
+                               "High (Cases)" = "red"))
+
+
+print("\nGroup sizes:")
+print(table(merged_data$AUDIT_group))
+
+print("\nGroup percentages:")
+group_proportions <- prop.table(table(merged_data$AUDIT_group)) * 100
+print(group_proportions)
+
+# Создаем бинарный фенотип для генетического анализа
+# Контрольная группа: низкие баллы AUDIT (НЕ неэкспонированные, а с низкими баллами)
+merged_data$phenotype_binary <- as.integer(merged_data$audit_score >= high_threshold)
+
+print("\nBinary phenotype:")
+print(paste("Cases (high AUDIT):", sum(merged_data$phenotype_binary, na.rm = TRUE)))
+print(paste("Controls (low AUDIT):", sum(merged_data$phenotype_binary == 0, na.rm = TRUE)))
+```
+Pie plot  для распределения
+```{r}
+library(ggplot2)
+
+
+df_pie <- as.data.frame(table(merged_data$AUDIT_group))
+colnames(df_pie) <- c("Group", "Count")
+
+df_pie$Percentage <- df_pie$Count / sum(df_pie$Count) * 100
+
+
+df_pie$Label <- paste0(df_pie$Group, "\n",
+                       round(df_pie$Percentage, 1), "%\n",
+                       "n=", df_pie$Count)
+
+ggplot(df_pie, aes(x = "", y = Count, fill = Group)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  
+  
+  geom_text(aes(label = Label),
+            position = position_stack(vjust = 0.5),
+            size = 4) +
+  
+
+  scale_fill_manual(values = c(
+    "Low (Control)" = "#A8DADC",   
+    "Intermediate" = "#FFE5B4",    
+    "High (Cases)" = "#FFADAD"       
+  )) +
+  
+  labs(title = "AUDIT Score Distribution by Group") +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "none"  
+  )
+```
+
+
+```{r}
+merged_data$AUDIT_zone <- cut(
+  merged_data$audit_score,
+  breaks = c(-Inf, 7, 15, 19, Inf),
+  labels = c("Zone 1 (AUDIT = 0–7)", 
+             "Zone 2 (AUDIT = 8–15)", 
+             "Zone 3 (AUDIT = 16–19)", 
+             "Zone 4 (AUDIT = 20–40)")
+)
+
+df_pie <- as.data.frame(table(merged_data$AUDIT_zone))
+colnames(df_pie) <- c("Zone", "Count")
+
+df_pie$Percentage <- df_pie$Count / sum(df_pie$Count) * 100
+
+df_pie$Label <- paste0(df_pie$Zone, "\n",
+                       round(df_pie$Percentage, 1), "%\n",
+                       "n=", df_pie$Count)
+
+library(ggplot2)
+library(ggplot2)
+
+
+df_pie <- as.data.frame(table(merged_data$AUDIT_zone))
+colnames(df_pie) <- c("Zone", "Count")
+
+df_pie$Percentage <- df_pie$Count / sum(df_pie$Count) * 100
+
+
+df_pie$LegendLabel <- paste0(
+  df_pie$Zone," - ",
+  round(df_pie$Percentage, 1), "%"
+)
+
+ggplot(df_pie, aes(x = "", y = Count, fill = LegendLabel)) +
+  geom_bar(stat = "identity", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  
+  
+  scale_fill_manual(values = setNames(
+  c("#A8DADC",  # голубой
+      "#B7E4C7",  # зелёный
+      "#CDB4DB",  # лавандовый
+      "#FFADAD" ),
+  df_pie$LegendLabel
+)) +
+  
+  labs(title = "AUDIT Score Distribution by Clinical Zones",
+       fill = "AUDIT Zones") +
+  
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    legend.position = "right"
+  )
+```
+```{r}
+library(ggplot2)
+
+
+merged_data$AUDIT_zone <- factor(
+  merged_data$AUDIT_zone,
+  levels = c("Zone 1 (AUDIT = 0–7)", 
+             "Zone 2 (AUDIT = 8–15)", 
+             "Zone 3 (AUDIT = 16–19)", 
+             "Zone 4 (AUDIT = 20–40)")
+)
+
+ggplot(merged_data, aes(x = AUDIT_zone, fill = AUDIT_zone)) +
+    geom_bar(color = "black") +
+    
+  
+    stat_count(aes(label = paste0(round(..count../sum(..count..)*100, 1), "%")),
+               geom = "text",
+               vjust = -0.5,
+               size = 6, fontface = "bold") +
+    
+    scale_fill_manual(values = c(
+        "Zone 1 (AUDIT = 0–7)"  = "#A8DADC",
+        "Zone 2 (AUDIT = 8–15)" = "#B7E4C7",
+        "Zone 3 (AUDIT = 16–19)"= "#CDB4DB",
+        "Zone 4 (AUDIT = 20–40)"= "#FFADAD"
+    )) +
+    
+    labs(title = "AUDIT Score Distribution by Clinical Zones",
+         x = "AUDIT Zones",
+         y = "Count") +
+    
+    theme_minimal() +
+    theme(
+        plot.title = element_text(hjust = 0.5, face = "bold"),
+        legend.position = "none",
+        axis.title = element_text(size = 20,face = "bold"),
+   
+        axis.text = element_text(size = 16,face = "bold")
+    )
+```
+
+Анализ демографических данных -Распределение по полу
+
+```{r,echo=FALSE}
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+
+
+
+hist_gender <- ggplot(merged_data %>% 
+                       filter(!is.na(audit_score), !is.na(gender)), 
+                     aes(x = audit_score, fill = factor(gender, labels = c("Female", "Male")))) +
+  geom_histogram(binwidth = 1, 
+                 position = "identity", 
+                 color = "black", 
+                 alpha = 0.6) +
+
+  geom_vline(xintercept = c(4, 8, 15), 
+             color = "black", 
+             linetype = "dashed", 
+             linewidth = 0.8,
+             alpha = 0.7) +
+
+  geom_text(aes(x = 4, y = Inf, label = "4"), 
+            vjust = -0.5, hjust = -0.2, color = "black", size = 4, fontface = "bold") +
+  geom_text(aes(x = 8, y = Inf, label = "8"), 
+            vjust = -0.5, hjust = -0.2, color = "black", size = 4, fontface = "bold") +
+  geom_text(aes(x = 15, y = Inf, label = "15"), 
+            vjust = -0.5, hjust = -0.2, color = "black", size = 4, fontface = "bold") +
+  scale_fill_manual(values = c("Female" = "#F8766D", "Male" = "#00BFC4"),
+                    name = "Gender") +
+  labs(
+    title = "Distribution of AUDIT scores by Gender",
+    x = "AUDIT score",
+    y = "Number of individuals"
+  ) +
+  scale_x_continuous(breaks = seq(0, max(merged_data$audit_score, na.rm = TRUE), by = 2)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    legend.position = "top",
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank()
+  )
+
+print(hist_gender)
+```
+
+```{r,echo=FALSE}
+library(ggplot2)
+library(dplyr)
+
+# Проверяем, есть ли данные для теста
+test_data <- merged_data %>%
+  filter(!is.na(gender_binary), !is.na(audit_score))
+
+# Выполняем t-тест
+t_test_result <- t.test(audit_score ~ gender_binary, data = test_data)
+p_value <- t_test_result$p.value
+
+# Форматируем p-value
+format_p_value <- function(p) {
+  if (p < 0.001) {
+    return("p < 2.2e-16")
+  } else {
+    return(paste0("p = ", round(p, 3)))
+  }
+}
+
+p_text <- format_p_value(p_value)
+
+# Получаем максимальное значение для масштабирования оси Y
+max_audit <- max(test_data$audit_score, na.rm = TRUE)
+
+plot_b <- ggplot(merged_data, 
+                 aes(x = factor(gender_binary, levels = c(0, 1), labels = c("Female", "Male")), 
+                     y = audit_score,
+                     fill = factor(gender_binary))) +
+  # Пунктирные линии
+  geom_hline(yintercept = c(4, 8, 15), 
+             color = "darkgray", 
+             linetype = "dashed", 
+             linewidth = 0.7,
+             alpha = 0.7) +
+  # Подписи к линиям (справа от графика)
+  annotate("text", x = 2.7, y = 4,  # Используем x = 2.7 чтобы текст был справа
+           label = "4", 
+           color = "black", 
+           hjust = 0, 
+           size = 3.5,
+           fontface = "bold") +
+  annotate("text", x = 2.7, y = 8, 
+           label = "8", 
+           color = "black", 
+           hjust = 0, 
+           size = 3.5,
+           fontface = "bold") +
+  annotate("text", x = 2.7, y = 15, 
+           label = "15", 
+           color = "black", 
+           hjust = 0, 
+           size = 3.5,
+           fontface = "bold") +
+  # Боксплот
+  geom_boxplot(color = "black", width = 0.5, show.legend = FALSE) +
+  # P-value над графиком
+  annotate("text", x = 1.5, y = max_audit * 1.08, 
+           label = p_text, 
+           size = 4.5, 
+           fontface = "bold",
+           color = "darkred") +
+  # Медианы внутри боксплотов
+  
+  scale_fill_manual(values = c("#F8766D", "#69b3a2")) +
+  labs(
+    title = "b) Total AUDIT score",
+    x = "Gender",
+    y = "AUDIT score"
+  ) +
+  # Расширяем границы по Y, чтобы вместить p-value
+  scale_y_continuous(limits = c(0, max_audit * 1.15),
+                     expand = expansion(mult = c(0, 0.1))) +
+  # Увеличиваем пределы по X для размещения подписей справа
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.8))) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12, face = "bold"),
+    plot.margin = margin(20, 60, 20, 20)  # Увеличиваем правый отступ для подписей линий
+  )
+
+print(plot_b)
+
+
+
+```
+
+Статистика по возрасту
+
+```{r,echo=FALSE}
+# Age statistics
+if('age' %in% names(merged_data)) {
+  print("\nAge statistics:")
+  print(summary(merged_data$age))
+  
+  # Relationship between age and AUDIT
+  plot(merged_data$age, merged_data$audit_score, 
+       pch = 16, col = rgb(0, 0, 1, 0.5),
+       xlab = "Age", 
+       ylab = "AUDIT Total Score",
+       main = "Relationship between Age and AUDIT Score")
+  
+  # Add correlation
+  correlation <- cor(merged_data$age, merged_data$audit_score, 
+                     use = "complete.obs")
+  text(par("usr")[1] + 0.05 * diff(par("usr")[1:2]), 
+       par("usr")[4] - 0.05 * diff(par("usr")[3:4]), 
+       paste("Correlation:", round(correlation, 3)), 
+       adj = c(0, 1))
+}
+```
+
+ОПИСАНИЕ PRS
+
+```{r,echo=FALSE}
+pgs_summary <- read.csv("pgs_summary.csv", head = T)
+print(pgs_summary[1:7])
+```
