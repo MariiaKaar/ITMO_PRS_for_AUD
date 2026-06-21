@@ -10,14 +10,9 @@ Contact: mariakr55@mail.ru
 - Database of Genotek: 152 006 individuals
 - After filtration: 36503 individuals
 
-### Phenotype construction:
-- Alcohol use was assessed using the AUDIT questionnaire
-- East Slavic ancestry
-- Adults ≥ 21 years
-- Cases : AUDIT >= 14 
-- Controls: AUDIT < 14
 ### Polygenic risk score
 - 13 external PRS from the [PGS Catalog](https://www.pgscatalog.org/)
+- 
 ## Methods
 - Phenotype construction using the AUDIT questionnaire (AUDIT > 14 = cases).  
 - Population stratification and quality control of genotype data.  
@@ -40,7 +35,9 @@ Contact: mariakr55@mail.ru
 |5    | [PRS_visualization.Rmd](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/PRS_visualization.Rmd)    | Generates risk-stratification plots based on polygenic risk scores, including odds ratios across PRS deciles, distributions of AUDIT categories across PRS percentiles, and PRS distributions within AUDIT severity groups.|
 |6    | [farmo_alco.Rmd](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/farmo_alco.Rmd)           | Evaluates associations between polygenic risk scores (PRS) and treatment outcomes across medication groups using logistic regression, calculates odds ratios (OR), ROC AUC and confidence intervals, applies multiple-testing correction (Benjamini–Hochberg), identifies the best-performing PRS models, and generates comparative ROC curve visualizations for each treatment group.|
 
- ##
+ ## Results 
+ <img width="999" height="550" alt="image" src="https://github.com/user-attachments/assets/4497e667-93b5-41e6-bf6c-14a19080a9aa" />
+
 
 
 
