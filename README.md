@@ -19,13 +19,14 @@ Contact: mariakr55@mail.ru
 ### Polygenic risk score
 - 13 external PRS from the [PGS Catalog](https://www.pgscatalog.org/)
 ## Methods
-### GWAS
-- [PLINK v2.0](https://www.cog-genomics.org/plink/2.0/)
-### pgsc_calc
-- [PLINK v2.0](https://www.cog-genomics.org/plink/2.0/)
-- [Nextflow](https://pgsc-calc.readthedocs.io/en/latest/getting-started.html)
-- [Docker](https://docs.docker.com/get-docker/)
-### R
+- Phenotype construction using the AUDIT questionnaire (AUDIT > 14 = cases).  
+- Population stratification and quality control of genotype data.  
+- Genome-Wide Association Study (GWAS) using [PLINK v2.0](https://www.cog-genomics.org/plink/2.0/)  
+- Polygenic Risk Score (PRS) calculation using PGS Catalog scores and [PGSCalc](https://pgsc-calc.readthedocs.io/en/latest/).  
+- Logistic regression (GLM) for AUD risk prediction.  
+- Model evaluation using Odds Ratios (OR), ROC curves, and Area Under the Curve (AUC).  
+- Risk stratification analysis across PRS deciles and AUD severity categories.  
+- Pharmacogenetic analysis of treatment outcomes (Disulfiram, Cyanamide, Pregabalin, Placebo).  
 
 ## Notebooks
 -  All the notebooks in the Scrips folder.
@@ -38,7 +39,8 @@ Contact: mariakr55@mail.ru
 |4    | [glm_roc_auc.Rmd](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/glm_roc_auc.Rmd)          | Builds logistic regression models with and without demographic covariates (age and sex), computes odds ratios (OR) and ROC AUC metrics |
 |5    | [PRS_visualization.Rmd](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/PRS_visualization.Rmd)    | Generates risk-stratification plots based on polygenic risk scores, including odds ratios across PRS deciles, distributions of AUDIT categories across PRS percentiles, and PRS distributions within AUDIT severity groups.|
 |6    | [farmo_alco.Rmd](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/farmo_alco.Rmd)           | Evaluates associations between polygenic risk scores (PRS) and treatment outcomes across medication groups using logistic regression, calculates odds ratios (OR), ROC AUC and confidence intervals, applies multiple-testing correction (Benjamini–Hochberg), identifies the best-performing PRS models, and generates comparative ROC curve visualizations for each treatment group.|
- 
+
+ ##
 
 
 
