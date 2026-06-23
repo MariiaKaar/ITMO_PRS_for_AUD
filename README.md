@@ -28,7 +28,7 @@ Contact: mariakr55@mail.ru
 
 |     |  Notebook               | Description                                         |
 | ----| ------------------------| --------------------------------------------------- |
-|1    | [Sample_characteristics](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/Sample_characteristics.Rmd)  | Performs descriptive analysis of the study cohort   |
+|1    | [Sample_characteristics.Rmd](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/Sample_characteristics.Rmd)  | Performs descriptive analysis of the study cohort   |
 |2    | [GWAS.Rmd](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/GWAS.Rmd)                | Performs a genome-wide association study to identify genetic variants associated with AUDIT scores while adjusting for demographic and population structure covariates.|          
 |3    | [run_prs_pipeline.sh](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/run_prs_pipeline.sh)     | Performs genotype quality control by filtering variants and samples based on missingness, minor allele frequency (MAF), and Hardy–Weinberg equilibrium, then calculates a selected polygenic risk score (PGS) using the PGS Catalog Calculator pipeline.|    
 |4    | [glm_roc_auc.Rmd](https://github.com/MariiaKaar/ITMO_PRS_for_AUD/blob/main/Scripts/glm_roc_auc.Rmd)          | Builds logistic regression models with and without demographic covariates (age and sex), computes odds ratios (OR) and ROC AUC metrics |
@@ -79,6 +79,12 @@ Figure 6. Distribution of patients by medication group
 <img width="856" height="850" alt="image" src="https://github.com/user-attachments/assets/dbf83867-4940-4f85-bc65-4b7500ab33bb" />  
 
 Figure 7. a) ROC curves comparing PRS models for prediction of outcome under Cyanamide treatment.
+
+## Conclusion
+- Polygenic risk scores (PRS) effectively predict alcohol use disorder (AUD) risk by aggregating genetic factors.
+- SNP rs1229984 in ADH1B was significantly associated with AUD, highlighting the role of alcohol metabolism.
+- Including age and gender enhances model performance, emphasizing the importance of non-genetic data.
+- The pharmacogenetic analysis identified a significant association between PGS002152 and treatment outcome in the cyanamide group, suggesting that polygenic information may help predict individual differences in treatment response
 
 
 
